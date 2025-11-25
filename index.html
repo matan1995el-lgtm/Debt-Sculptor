@@ -3,29 +3,51 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Debt Sculptor | אפליקציית ניהול חובות</title>
+    <title>Debt Sculptor | אפליקציית ניהול חובות מתקדמת</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.0.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/financejs@4.1.0/lib/finance.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js"></script>
     <style>
         body { background-color: #f7f7f7; }
-.hero.is-primary { background-color: #48c78e; } /* Green accent for 'debt-free' goal */
-.box { box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-.progress-bar-container { height: 20px; border-radius: 10px; overflow: hidden; background-color: #e0e0e0; margin-top: 10px; }
-.progress-bar { height: 100%; transition: width 0.5s ease-in-out; background-color: #48c78e; }
+        .hero.is-primary { background-color: #48c78e; }
+        .box { box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        .progress-bar-container { height: 20px; border-radius: 10px; overflow: hidden; background-color: #e0e0e0; margin-top: 10px; }
+        .progress-bar { height: 100%; transition: width 0.5s ease-in-out; background-color: #48c78e; }
         #chartCanvas { max-height: 400px; }
-.is-rtl { text-align: right; }
-.debt-section-title { margin-top: 3rem; margin-bottom: 1rem; border-bottom: 2px solid #dbdbdb; padding-bottom: 5px; }
+        .is-rtl { text-align: right; }
+        .debt-section-title { margin-top: 3rem; margin-bottom: 1rem; border-bottom: 2px solid #dbdbdb; padding-bottom: 5px; }
+        .notification { position: fixed; top: 20px; right: 20px; z-index: 100; max-width: 400px; }
+        .is-loading { position: relative; pointer-events: none; }
+        .is-loading::after { content: ""; position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; margin-top: -10px; margin-left: -10px; border: 2px solid #dbdbdb; border-radius: 50%; border-top-color: #48c78e; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .field .help.is-danger { color: #ff3860; }
+        .input.is-danger { border-color: #ff3860; }
+        .dashboard-card { transition: transform 0.3s; }
+        .dashboard-card:hover { transform: translateY(-5px); }
+        .calendar-day { cursor: pointer; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; margin: 2px; }
+        .calendar-day.has-payment { background-color: #48c78e; color: white; }
+        .calendar-day.today { border: 2px solid #3273dc; }
+        .ai-recommendation { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .goal-progress { position: relative; }
+        .goal-progress .progress-value { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; color: #333; }
+        .menu-list li { margin-bottom: 0.5rem; }
+        .menu-label { font-size: 0.9rem; color: #7a7a7a; }
+        .backup-option { border: 1px solid #dbdbdb; border-radius: 4px; padding: 1rem; margin-bottom: 1rem; }
     </style>
 </head>
 <body>
+
+<!-- התראות -->
+<div id="notificationArea"></div>
 
 <section class="hero is-primary is-bold">
     <div class="hero-body is-rtl">
         <div class="container">
             <h1 class="title">
-                Debt Sculptor | מפסל החובות
+                <i class="fas fa-chart-line"></i> Debt Sculptor | מפסל החובות
             </h1>
             <p class="subtitle">
                 הדרך היעילה, היפה והאפקטיבית שלך לחופש פיננסי.
@@ -43,13 +65,13 @@
                     <div class="field">
                         <label class="label">אימייל</label>
                         <div class="control">
-                            <input id="email" class="input" type="email" placeholder="הכנס אימייל">
+                            <input id="email" class="input" type="email" placeholder="הכנס אימייל" required>
                         </div>
                     </div>
                     <div class="field">
                         <label class="label">סיסמה (לפחות 6 תווים)</label>
                         <div class="control">
-                            <input id="password" class="input" type="password" placeholder="הכנס סיסמה">
+                            <input id="password" class="input" type="password" placeholder="הכנס סיסמה" required minlength="6">
                         </div>
                     </div>
                     <div class="field is-grouped is-grouped-centered">
@@ -69,112 +91,309 @@
 
 <section id="appDashboard" class="section is-hidden">
     <div class="container is-rtl">
-        <p class="is-size-5 has-text-right">שלום, <span id="userEmailDisplay" class="has-text-weight-bold"></span>! | <a id="signOutBtn" href="#">יציאה</a></p>
-
         <div class="columns">
-            <div class="column is-one-quarter">
-                <div class="box has-background-light">
-                    <p class="title is-6">סה"כ חובות והלוואות</p>
-                    <p id="totalDebt" class="subtitle is-3 has-text-primary">0 ₪</p>
-                </div>
-            </div>
-            <div class="column is-one-quarter">
-                <div class="box has-background-light">
-                    <p class="title is-6">תשלום חודשי מינימלי</p>
-                    <p id="totalMinPayment" class="subtitle is-3">0 ₪</p>
-                </div>
-            </div>
-            <div class="column is-half">
+            <!-- סרגל צד -->
+            <div class="column is-3">
                 <div class="box">
-                    <p class="title is-6">התקדמות כללית</p>
-                    <div class="progress-bar-container">
-                        <div id="overallProgress" class="progress-bar" style="width: 0%;"></div>
+                    <aside class="menu">
+                        <p class="menu-label">ניווט כללי</p>
+                        <ul class="menu-list">
+                            <li><a href="#dashboard" class="is-active nav-link" data-target="dashboard"><i class="fas fa-tachometer-alt"></i> דשבורד</a></li>
+                            <li><a href="#debts" class="nav-link" data-target="debts"><i class="fas fa-credit-card"></i> ניהול חובות</a></li>
+                            <li><a href="#calendar" class="nav-link" data-target="calendar"><i class="fas fa-calendar-alt"></i> לוח תשלומים</a></li>
+                            <li><a href="#goals" class="nav-link" data-target="goals"><i class="fas fa-bullseye"></i> יעדים</a></li>
+                            <li><a href="#backup" class="nav-link" data-target="backup"><i class="fas fa-download"></i> גיבוי ושחזור</a></li>
+                            <li><a href="#ai" class="nav-link" data-target="ai"><i class="fas fa-robot"></i> המלצות AI</a></li>
+                        </ul>
+                        
+                        <p class="menu-label mt-5">חשבון</p>
+                        <ul class="menu-list">
+                            <li><a id="signOutBtn" href="#"><i class="fas fa-sign-out-alt"></i> יציאה</a></li>
+                        </ul>
+                    </aside>
+                </div>
+                
+                <!-- התראות קרובות -->
+                <div class="box mt-4">
+                    <h3 class="title is-5">התראות קרובות</h3>
+                    <div id="upcomingAlerts">
+                        <p class="has-text-grey">אין התראות פעילות</p>
                     </div>
-                    <p id="progressText" class="help">הזן חובות כדי להתחיל במעקב.</p>
                 </div>
             </div>
-        </div>
-
-        <div class="box">
-            <h2 class="title is-4">סימולטור פירעון חובות (אפקטיבי)</h2>
-            <div class="field is-horizontal">
-                <div class="field-label is-normal">
-                    <label class="label">תשלום חודשי נוסף</label>
-                </div>
-                <div class="field-body">
-                    <div class="field is-expanded">
-                        <div class="control">
-                            <input id="extraPayment" class="input is-large" type="number" value="100" min="0">
-                        </div>
-                        <p class="help">הקצה סכום זה לפירעון מואץ. דוגמה: 100 ₪</p>
-                    </div>
-                </div>
-            </div>
-
-            <table class="table is-fullwidth is-striped mt-5">
-                <thead>
-                    <tr>
-                        <th>שיטה</th>
-                        <th>סה"כ ריבית שתשולם</th>
-                        <th>סך ריבית שנחסכה</th>
-                        <th>תאריך פירעון צפוי</th>
-                    </tr>
-                </thead>
-                <tbody id="resultsTableBody">
-                    <tr><td>מינימום</td><td id="minInterest">--</td><td class="has-text-grey">--</td><td id="minDate">--</td></tr>
-                    <tr><td><span class="has-text-info">כדור השלג (מומנטום)</span></td><td id="snowballInterest">--</td><td id="snowballSaved" class="has-text-success has-text-weight-bold">--</td><td id="snowballDate">--</td></tr>
-                    <tr><td><span class="has-text-danger">מפולת החובות (חיסכון מקסימלי)</span></td><td id="avalancheInterest">--</td><td id="avalancheSaved" class="has-text-success has-text-weight-bold">--</td><td id="avalancheDate">--</td></tr>
-                </tbody>
-            </table>
-
-            <div class="columns is-centered mt-5">
-                <div class="column is-full">
-                    <canvas id="chartCanvas"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <div class="box mt-6">
-            <h2 class="title is-4">ניהול חובות והלוואות (CRUD)</h2>
-            <button id="showAddDebtModal" class="button is-success is-outlined mb-4">הוסף רשומה חדשה</button>
             
-            <h3 class="title is-5 debt-section-title">הלוואות פעילות (Loans)</h3>
-            <table class="table is-fullwidth is-striped is-hoverable">
-                <thead>
-                    <tr>
-                        <th>שם ההלוואה</th>
-                        <th>יתרה נוכחית</th>
-                        <th>ריבית שנתית (APR)</th>
-                        <th>תשלום מינימלי</th>
-                        <th>פעולות</th>
-                    </tr>
-                </thead>
-                <tbody id="loansTableBody">
-                    <tr><td colspan="5" class="has-text-centered">אין הלוואות פעילות במערכת.</td></tr>
-                </tbody>
-            </table>
+            <!-- תוכן ראשי -->
+            <div class="column is-9">
+                <p class="is-size-5 has-text-right mb-4">שלום, <span id="userEmailDisplay" class="has-text-weight-bold"></span>!</p>
+                
+                <!-- דשבורד -->
+                <div id="dashboard" class="dashboard-section">
+                    <div class="columns is-multiline">
+                        <div class="column is-one-quarter">
+                            <div class="box dashboard-card has-background-light">
+                                <p class="title is-6">סה"כ חובות והלוואות</p>
+                                <p id="totalDebt" class="subtitle is-3 has-text-primary">0 ₪</p>
+                            </div>
+                        </div>
+                        <div class="column is-one-quarter">
+                            <div class="box dashboard-card has-background-light">
+                                <p class="title is-6">תשלום חודשי מינימלי</p>
+                                <p id="totalMinPayment" class="subtitle is-3">0 ₪</p>
+                            </div>
+                        </div>
+                        <div class="column is-one-quarter">
+                            <div class="box dashboard-card has-background-light">
+                                <p class="title is-6">ריבית ממוצעת</p>
+                                <p id="avgInterest" class="subtitle is-3 has-text-info">0%</p>
+                            </div>
+                        </div>
+                        <div class="column is-one-quarter">
+                            <div class="box dashboard-card has-background-light">
+                                <p class="title is-6">חודשים עד חופש</p>
+                                <p id="monthsToFreedom" class="subtitle is-3 has-text-danger">0</p>
+                            </div>
+                        </div>
+                    </div>
 
-            <h3 class="title is-5 debt-section-title">חובות קצרי טווח (Debts)</h3>
-            <table class="table is-fullwidth is-striped is-hoverable">
-                <thead>
-                    <tr>
-                        <th>שם החוב</th>
-                        <th>יתרה נוכחית</th>
-                        <th>ריבית שנתית (APR)</th>
-                        <th>תשלום מינימלי</th>
-                        <th>פעולות</th>
-                    </tr>
-                </thead>
-                <tbody id="debtsTableBody">
-                    <tr><td colspan="5" class="has-text-centered">אין חובות קצרי טווח במערכת.</td></tr>
-                </tbody>
-            </table>
+                    <div class="box">
+                        <h2 class="title is-4">סימולטור פירעון חובות (אפקטיבי)</h2>
+                        <div class="field is-horizontal">
+                            <div class="field-label is-normal">
+                                <label class="label">תשלום חודשי נוסף</label>
+                            </div>
+                            <div class="field-body">
+                                <div class="field is-expanded">
+                                    <div class="control">
+                                        <input id="extraPayment" class="input is-large" type="number" value="100" min="0">
+                                    </div>
+                                    <p class="help">הקצה סכום זה לפירעון מואץ. דוגמה: 100 ₪</p>
+                                </div>
+                            </div>
+                        </div>
 
-            <button id="exportData" class="button is-info is-small is-outlined mt-3">ייצוא נתונים (CSV)</button>
+                        <table class="table is-fullwidth is-striped mt-5">
+                            <thead>
+                                <tr>
+                                    <th>שיטה</th>
+                                    <th>סה"כ ריבית שתשולם</th>
+                                    <th>סך ריבית שנחסכה</th>
+                                    <th>תאריך פירעון צפוי</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultsTableBody">
+                                <tr><td>מינימום</td><td id="minInterest">--</td><td class="has-text-grey">--</td><td id="minDate">--</td></tr>
+                                <tr><td><span class="has-text-info">כדור השלג (מומנטום)</span></td><td id="snowballInterest">--</td><td id="snowballSaved" class="has-text-success has-text-weight-bold">--</td><td id="snowballDate">--</td></tr>
+                                <tr><td><span class="has-text-danger">מפולת החובות (חיסכון מקסימלי)</span></td><td id="avalancheInterest">--</td><td id="avalancheSaved" class="has-text-success has-text-weight-bold">--</td><td id="avalancheDate">--</td></tr>
+                            </tbody>
+                        </table>
+
+                        <div class="columns is-centered mt-5">
+                            <div class="column is-full">
+                                <canvas id="chartCanvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- סטטיסטיקות מתקדמות -->
+                    <div class="box mt-6">
+                        <h2 class="title is-4">סטטיסטיקות מתקדמות</h2>
+                        <div class="columns is-multiline">
+                            <div class="column is-half">
+                                <canvas id="debtTypeChart"></canvas>
+                            </div>
+                            <div class="column is-half">
+                                <canvas id="interestDistributionChart"></canvas>
+                            </div>
+                            <div class="column is-full">
+                                <canvas id="paymentScheduleChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- ניהול חובות -->
+                <div id="debts" class="dashboard-section is-hidden">
+                    <div class="box">
+                        <h2 class="title is-4">ניהול חובות והלוואות (CRUD)</h2>
+                        <button id="showAddDebtModal" class="button is-success is-outlined mb-4">הוסף רשומה חדשה</button>
+                        
+                        <h3 class="title is-5 debt-section-title">הלוואות פעילות (Loans)</h3>
+                        <table class="table is-fullwidth is-striped is-hoverable">
+                            <thead>
+                                <tr>
+                                    <th>שם ההלוואה</th>
+                                    <th>יתרה נוכחית</th>
+                                    <th>ריבית שנתית (APR)</th>
+                                    <th>תשלום מינימלי</th>
+                                    <th>פעולות</th>
+                                </tr>
+                            </thead>
+                            <tbody id="loansTableBody">
+                                <tr><td colspan="5" class="has-text-centered">אין הלוואות פעילות במערכת.</td></tr>
+                            </tbody>
+                        </table>
+
+                        <h3 class="title is-5 debt-section-title">חובות קצרי טווח (Debts)</h3>
+                        <table class="table is-fullwidth is-striped is-hoverable">
+                            <thead>
+                                <tr>
+                                    <th>שם החוב</th>
+                                    <th>יתרה נוכחית</th>
+                                    <th>ריבית שנתית (APR)</th>
+                                    <th>תשלום מינימלי</th>
+                                    <th>פעולות</th>
+                                </tr>
+                            </thead>
+                            <tbody id="debtsTableBody">
+                                <tr><td colspan="5" class="has-text-centered">אין חובות קצרי טווח במערכת.</td></tr>
+                            </tbody>
+                        </table>
+
+                        <button id="exportData" class="button is-info is-small is-outlined mt-3">ייצוא נתונים (CSV)</button>
+                    </div>
+                </div>
+                
+                <!-- לוח תשלומים -->
+                <div id="calendar" class="dashboard-section is-hidden">
+                    <div class="box">
+                        <h2 class="title is-4">לוח תשלומים</h2>
+                        <div class="columns">
+                            <div class="column is-3">
+                                <div class="field">
+                                    <label class="label">חודש</label>
+                                    <div class="control">
+                                        <div class="select is-fullwidth">
+                                            <select id="calendarMonth">
+                                                <!-- Options will be populated by JavaScript -->
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="column is-3">
+                                <div class="field">
+                                    <label class="label">שנה</label>
+                                    <div class="control">
+                                        <div class="select is-fullwidth">
+                                            <select id="calendarYear">
+                                                <!-- Options will be populated by JavaScript -->
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="column is-6">
+                                <div class="field">
+                                    <label class="label">פעולות</label>
+                                    <div class="control">
+                                        <button id="addReminder" class="button is-info">הוסף תזכורת</button>
+                                        <button id="exportCalendar" class="button is-outlined">ייצא ללוח שנה</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="calendarView" class="mt-4">
+                            <!-- Calendar will be rendered here -->
+                        </div>
+                        
+                        <div id="paymentReminders" class="mt-5">
+                            <h3 class="title is-5">תזכורות תשלומים</h3>
+                            <table class="table is-fullwidth is-striped">
+                                <thead>
+                                    <tr>
+                                        <th>תאריך</th>
+                                        <th>חוב</th>
+                                        <th>סכום</th>
+                                        <th>סטטוס</th>
+                                        <th>פעולות</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="remindersTableBody">
+                                    <tr><td colspan="5" class="has-text-centered">אין תזכורות פעילות.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- יעדים -->
+                <div id="goals" class="dashboard-section is-hidden">
+                    <div class="box">
+                        <h2 class="title is-4">הגדרת יעדים ומעקב</h2>
+                        <button id="showAddGoalModal" class="button is-success is-outlined mb-4">הוסף יעד חדש</button>
+                        
+                        <div class="columns is-multiline" id="goalsContainer">
+                            <!-- יעדים יוצגו כאן -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- גיבוי ושחזור -->
+                <div id="backup" class="dashboard-section is-hidden">
+                    <div class="box">
+                        <h2 class="title is-4">גיבוי ושחזור נתונים</h2>
+                        
+                        <div class="columns is-multiline">
+                            <div class="column is-half">
+                                <div class="backup-option">
+                                    <h3 class="title is-5">גיבוי מקומי</h3>
+                                    <p class="mb-3">שמור עותק של הנתונים שלך במכשיר זה</p>
+                                    <button id="localBackup" class="button is-info">צור גיבוי מקומי</button>
+                                    <button id="localRestore" class="button is-outlined">שחזר מגיבוי מקומי</button>
+                                </div>
+                            </div>
+                            
+                            <div class="column is-half">
+                                <div class="backup-option">
+                                    <h3 class="title is-5">גיבוי קובץ</h3>
+                                    <p class="mb-3">ייצא או יבא את הנתונים שלך כקובץ</p>
+                                    <button id="fileBackup" class="button is-info">ייצא לקובץ</button>
+                                    <div class="file mt-2">
+                                        <label class="file-label">
+                                            <input class="file-input" type="file" id="fileRestore" accept=".json,.csv">
+                                            <span class="file-cta">
+                                                <span class="file-label">יבא מקובץ</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="column is-full">
+                                <div class="backup-option">
+                                    <h3 class="title is-5">היסטוריית גיבויים</h3>
+                                    <div id="backupHistory">
+                                        <!-- Backup history will be shown here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- המלצות AI -->
+                <div id="ai" class="dashboard-section is-hidden">
+                    <div class="box ai-recommendation">
+                        <h2 class="title is-4 has-text-white">המלצות AI מותאמות אישית</h2>
+                        <div id="aiRecommendations">
+                            <!-- AI recommendations will be shown here -->
+                        </div>
+                    </div>
+                    
+                    <div class="box mt-4">
+                        <h3 class="title is-5">ניתוח פיננסי מתקדם</h3>
+                        <div id="financialAnalysis">
+                            <!-- Financial analysis will be shown here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </section>
 
+<!-- מודלים -->
 <div id="debtModal" class="modal">
     <div class="modal-background"></div>
     <div class="modal-card">
@@ -202,34 +421,130 @@
                 <div class="control">
                     <input id="debtName" class="input" type="text" placeholder="הלוואת רכב, כרטיס אשראי X" required>
                 </div>
+                <p id="debtNameError" class="help is-danger is-hidden">שם החוב הוא שדה חובה</p>
             </div>
             <div class="field">
                 <label class="label">יתרה נוכחית (₪)</label>
                 <div class="control">
-                    <input id="debtBalance" class="input" type="number" min="0" required>
+                    <input id="debtBalance" class="input" type="number" min="0" step="0.01" required>
                 </div>
+                <p id="debtBalanceError" class="help is-danger is-hidden">יתרה נוכחית חייבת להיות מספר חיובי</p>
             </div>
             <div class="field">
                 <label class="label">ריבית שנתית (APR %)</label>
                 <div class="control">
                     <input id="debtRate" class="input" type="number" min="0" step="0.01" required>
                 </div>
+                <p id="debtRateError" class="help is-danger is-hidden">ריבית שנתית חייבת להיות מספר חיובי</p>
             </div>
             <div class="field">
                 <label class="label">תקופת הלוואה מקורית (חודשים)</label>
                 <div class="control">
                     <input id="debtTerm" class="input" type="number" min="1" required>
                 </div>
+                <p id="debtTermError" class="help is-danger is-hidden">תקופת הלוואה חייבת להיות מספר שלם חיובי</p>
             </div>
             <div class="field">
                 <label class="label">תשלום חודשי מינימלי (₪)</label>
                 <div class="control">
-                    <input id="debtMinPayment" class="input" type="number" min="0" required>
+                    <input id="debtMinPayment" class="input" type="number" min="0" step="0.01" required>
                 </div>
+                <p id="debtMinPaymentError" class="help is-danger is-hidden">תשלום מינימלי חודשי חייב להיות מספר חיובי</p>
             </div>
         </section>
         <footer class="modal-card-foot is-rtl">
             <button id="saveDebtBtn" class="button is-success">שמור</button>
+            <button class="button close-modal">בטל</button>
+        </footer>
+    </div>
+</div>
+
+<div id="goalModal" class="modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head is-rtl">
+            <p id="goalModalTitle" class="modal-card-title">הוספת יעד חדש</p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body is-rtl">
+            <input type="hidden" id="goalId">
+            
+            <div class="field">
+                <label class="label">שם היעד</label>
+                <div class="control">
+                    <input id="goalName" class="input" type="text" placeholder="חופש מחובות, חיסכון ל..." required>
+                </div>
+            </div>
+            
+            <div class="field">
+                <label class="label">סוג היעד</label>
+                <div class="control">
+                    <div class="select is-fullwidth">
+                        <select id="goalType" required>
+                            <option value="debt_free">חופש מחובות</option>
+                            <option value="debt_reduction">הפחתת חוב</option>
+                            <option value="savings">חיסכון</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="field">
+                <label class="label">יעד (₪)</label>
+                <div class="control">
+                    <input id="goalTarget" class="input" type="number" min="0" step="0.01" required>
+                </div>
+            </div>
+            
+            <div class="field">
+                <label class="label">תאריך יעד</label>
+                <div class="control">
+                    <input id="goalDate" class="input" type="date" required>
+                </div>
+            </div>
+        </section>
+        <footer class="modal-card-foot is-rtl">
+            <button id="saveGoalBtn" class="button is-success">שמור</button>
+            <button class="button close-modal">בטל</button>
+        </footer>
+    </div>
+</div>
+
+<div id="reminderModal" class="modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head is-rtl">
+            <p class="modal-card-title">הוספת תזכורת תשלום</p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body is-rtl">
+            <div class="field">
+                <label class="label">חוב</label>
+                <div class="control">
+                    <div class="select is-fullwidth">
+                        <select id="reminderDebt" required>
+                            <!-- Options will be populated by JavaScript -->
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="field">
+                <label class="label">תאריך תזכורת</label>
+                <div class="control">
+                    <input id="reminderDate" class="input" type="date" required>
+                </div>
+            </div>
+            
+            <div class="field">
+                <label class="label">תיאור (אופציונלי)</label>
+                <div class="control">
+                    <input id="reminderDescription" class="input" type="text" placeholder="תשלום חודשי, פירעון מוקדם...">
+                </div>
+            </div>
+        </section>
+        <footer class="modal-card-foot is-rtl">
+            <button id="saveReminderBtn" class="button is-success">שמור</button>
             <button class="button close-modal">בטל</button>
         </footer>
     </div>
@@ -244,13 +559,117 @@
 
     const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const finance = new Finance();
+    const { DateTime } = luxon;
     
-    let currentDebts =; 
-    let debtChart;
+    let currentDebts = [];
+    let currentGoals = [];
+    let currentReminders = [];
+    let debtChart, debtTypeChart, interestDistributionChart, paymentScheduleChart;
     const MAX_MONTHS = 360; // Max months for simulation
 
     // ----------------------------------------------------------------------
-    // II. CORE FINANCIAL LOGIC (Finance.js + Custom Snowball/Avalanche)
+    // II. UTILITY FUNCTIONS
+    // ----------------------------------------------------------------------
+    
+    /**
+     * Shows a notification message
+     */
+    function showNotification(message, type = 'success') {
+        const notificationArea = document.getElementById('notificationArea');
+        const notification = document.createElement('div');
+        notification.className = `notification is-${type}`;
+        notification.innerHTML = `
+            <button class="delete"></button>
+            ${message}
+        `;
+        
+        notificationArea.appendChild(notification);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 5000);
+        
+        // Remove on click
+        notification.querySelector('.delete').addEventListener('click', () => {
+            notification.remove();
+        });
+    }
+    
+    /**
+     * Sets loading state for a button
+     */
+    function setButtonLoading(button, isLoading) {
+        if (isLoading) {
+            button.classList.add('is-loading');
+            button.disabled = true;
+        } else {
+            button.classList.remove('is-loading');
+            button.disabled = false;
+        }
+    }
+    
+    /**
+     * Validates debt form inputs
+     */
+    function validateDebtForm() {
+        let isValid = true;
+        
+        // Reset errors
+        document.querySelectorAll('.help.is-danger').forEach(el => {
+            el.classList.add('is-hidden');
+        });
+        document.querySelectorAll('.input.is-danger').forEach(el => {
+            el.classList.remove('is-danger');
+        });
+        
+        // Validate name
+        const name = document.getElementById('debtName').value.trim();
+        if (!name) {
+            document.getElementById('debtNameError').classList.remove('is-hidden');
+            document.getElementById('debtName').classList.add('is-danger');
+            isValid = false;
+        }
+        
+        // Validate balance
+        const balance = parseFloat(document.getElementById('debtBalance').value);
+        if (isNaN(balance) || balance <= 0) {
+            document.getElementById('debtBalanceError').classList.remove('is-hidden');
+            document.getElementById('debtBalance').classList.add('is-danger');
+            isValid = false;
+        }
+        
+        // Validate rate
+        const rate = parseFloat(document.getElementById('debtRate').value);
+        if (isNaN(rate) || rate < 0) {
+            document.getElementById('debtRateError').classList.remove('is-hidden');
+            document.getElementById('debtRate').classList.add('is-danger');
+            isValid = false;
+        }
+        
+        // Validate term
+        const term = parseInt(document.getElementById('debtTerm').value);
+        if (isNaN(term) || term < 1) {
+            document.getElementById('debtTermError').classList.remove('is-hidden');
+            document.getElementById('debtTerm').classList.add('is-danger');
+            isValid = false;
+        }
+        
+        // Validate min payment
+        const minPayment = parseFloat(document.getElementById('debtMinPayment').value);
+        if (isNaN(minPayment) || minPayment <= 0) {
+            document.getElementById('debtMinPaymentError').classList.remove('is-hidden');
+            document.getElementById('debtMinPayment').classList.add('is-danger');
+            isValid = false;
+        }
+        
+        return isValid;
+    }
+
+    // ----------------------------------------------------------------------
+    // III. CORE FINANCIAL LOGIC (Finance.js + Custom Snowball/Avalanche)
     // ----------------------------------------------------------------------
 
     /**
@@ -284,7 +703,7 @@
     function runSimulation(debts, extraPayment, strategy) {
         // Only run simulation if there are debts
         if (debts.length === 0) {
-            return { schedule:, totalInterest: 0, totalMonths: 0 }; 
+            return { schedule: [], totalInterest: 0, totalMonths: 0 }; 
         }
 
         let simDebts = debts.map(d => ({...d, balance: d.balance }));
@@ -297,7 +716,7 @@
 
         let totalInterest = 0;
         let month = 0;
-        let schedule =;
+        let schedule = [];
         let done = false;
 
         while (!done && month < MAX_MONTHS) {
@@ -306,7 +725,7 @@
             let availableExtra = extraPayment;
             
             let targetDebtIndex = -1;
-            if (strategy!== 'min') {
+            if (strategy !== 'min') {
                 targetDebtIndex = simDebts.findIndex(d => d.balance > 0);
             }
 
@@ -316,7 +735,7 @@
                 if (debt.balance > 0) {
                     let currentExtra = 0;
                     
-                    if (strategy!== 'min' && i === targetDebtIndex) {
+                    if (strategy !== 'min' && i === targetDebtIndex) {
                         currentExtra = availableExtra;
                     }
                     
@@ -347,7 +766,7 @@
     }
 
     // ----------------------------------------------------------------------
-    // III. UI / DATA MANAGEMENT (CRUD, Sync, Charting)
+    // IV. UI / DATA MANAGEMENT (CRUD, Sync, Charting)
     // ----------------------------------------------------------------------
 
     // --- A. AUTHENTICATION & SESSION MANAGEMENT ---
@@ -357,42 +776,121 @@
         document.getElementById('signUpBtn').addEventListener('click', signUp);
         document.getElementById('signOutBtn').addEventListener('click', signOut);
 
+        // Navigation
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = this.getAttribute('data-target');
+                showSection(target);
+                
+                // Update active state
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('is-active'));
+                this.classList.add('is-active');
+            });
+        });
+
+        // Initialize calendar dropdowns
+        initCalendarDropdowns();
+        
+        // Load backup history
+        loadBackupHistory();
+
         supabase.auth.getSession().then(({ data: { session } }) => {
-            handleAuth(session? session.user : null);
+            handleAuth(session ? session.user : null);
         });
 
         supabase.auth.onAuthStateChange((event, session) => {
-            handleAuth(session? session.user : null);
+            handleAuth(session ? session.user : null);
         });
     });
+
+    function showSection(sectionId) {
+        // Hide all sections
+        document.querySelectorAll('.dashboard-section').forEach(section => {
+            section.classList.add('is-hidden');
+        });
+        
+        // Show target section
+        document.getElementById(sectionId).classList.remove('is-hidden');
+    }
 
     async function signIn() {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-            document.getElementById('authMessage').textContent = 'שגיאת כניסה: ' + error.message;
+        const signInBtn = document.getElementById('signInBtn');
+        
+        if (!email || !password) {
+            document.getElementById('authMessage').textContent = 'אנא מלא את כל השדות';
+            return;
+        }
+        
+        setButtonLoading(signInBtn, true);
+        
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                document.getElementById('authMessage').textContent = 'שגיאת כניסה: ' + error.message;
+                showNotification('שגיאת כניסה: ' + error.message, 'danger');
+            } else {
+                showNotification('התחברת בהצלחה!', 'success');
+            }
+        } catch (error) {
+            document.getElementById('authMessage').textContent = 'שגיאה בלתי צפויה: ' + error.message;
+            showNotification('שגיאה בלתי צפויה: ' + error.message, 'danger');
+        } finally {
+            setButtonLoading(signInBtn, false);
         }
     }
 
     async function signUp() {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) {
-            document.getElementById('authMessage').textContent = 'שגיאת הרשמה: ' + error.message;
-        } else {
-            document.getElementById('authMessage').textContent = 'נשלחה הודעת אימות לדוא"ל שלך. אנא אשר לפני הכניסה.';
+        const signUpBtn = document.getElementById('signUpBtn');
+        
+        if (!email || !password) {
+            document.getElementById('authMessage').textContent = 'אנא מלא את כל השדות';
+            return;
+        }
+        
+        if (password.length < 6) {
+            document.getElementById('authMessage').textContent = 'סיסמה חייבת להכיל לפחות 6 תווים';
+            return;
+        }
+        
+        setButtonLoading(signUpBtn, true);
+        
+        try {
+            const { data, error } = await supabase.auth.signUp({ email, password });
+            if (error) {
+                document.getElementById('authMessage').textContent = 'שגיאת הרשמה: ' + error.message;
+                showNotification('שגיאת הרשמה: ' + error.message, 'danger');
+            } else {
+                document.getElementById('authMessage').textContent = 'נשלחה הודעת אימות לדוא"ל שלך. אנא אשר לפני הכניסה.';
+                showNotification('נשלחה הודעת אימות לדוא"ל שלך. אנא אשר לפני הכניסה.', 'info');
+            }
+        } catch (error) {
+            document.getElementById('authMessage').textContent = 'שגיאה בלתי צפויה: ' + error.message;
+            showNotification('שגיאה בלתי צפויה: ' + error.message, 'danger');
+        } finally {
+            setButtonLoading(signUpBtn, false);
         }
     }
 
     async function signOut() {
-        const { error } = await supabase.auth.signOut();
-        if (!error) {
-            document.getElementById('appDashboard').classList.add('is-hidden');
-            document.getElementById('auth').classList.remove('is-hidden');
-            currentDebts =; // Ensure reset uses empty array
-            if (debtChart) debtChart.destroy();
+        const signOutBtn = document.getElementById('signOutBtn');
+        setButtonLoading(signOutBtn, true);
+        
+        try {
+            const { error } = await supabase.auth.signOut();
+            if (error) {
+                showNotification('שגיאה ביציאה: ' + error.message, 'danger');
+            } else {
+                showNotification('יצאת מהמערכת בהצלחה', 'info');
+            }
+        } catch (error) {
+            showNotification('שגיאה בלתי צפויה: ' + error.message, 'danger');
+        } finally {
+            setButtonLoading(signOutBtn, false);
         }
     }
 
@@ -405,7 +903,7 @@
             authSection.classList.add('is-hidden');
             appSection.classList.remove('is-hidden');
             userEmailDisplay.textContent = user.email;
-            fetchDebts();
+            fetchAllData();
         } else {
             authSection.classList.remove('is-hidden');
             appSection.classList.add('is-hidden');
@@ -414,66 +912,130 @@
 
     // --- B. CRUD OPERATIONS (Supabase Database) ---
 
-    // Fetch debts from Supabase
-    async function fetchDebts() {
-        // RLS will ensure only current user's data is fetched
-        const { data, error } = await supabase
-   .from('debts')
-   .select('*');
+    // Fetch all data from Supabase
+    async function fetchAllData() {
+        try {
+            // Fetch debts
+            const { data: debtsData, error: debtsError } = await supabase
+                .from('debts')
+                .select('*');
 
-        if (error) {
-            console.error('Error fetching debts:', error);
-            return;
+            if (debtsError) {
+                console.error('Error fetching debts:', debtsError);
+                showNotification('שגיאה בטעינת החובות: ' + debtsError.message, 'danger');
+            } else {
+                currentDebts = debtsData || [];
+            }
+            
+            // Fetch goals
+            const { data: goalsData, error: goalsError } = await supabase
+                .from('goals')
+                .select('*');
+                
+            if (goalsError) {
+                console.error('Error fetching goals:', goalsError);
+            } else {
+                currentGoals = goalsData || [];
+            }
+            
+            // Fetch reminders
+            const { data: remindersData, error: remindersError } = await supabase
+                .from('reminders')
+                .select('*');
+                
+            if (remindersError) {
+                console.error('Error fetching reminders:', remindersError);
+            } else {
+                currentReminders = remindersData || [];
+            }
+            
+            renderAllData();
+        } catch (error) {
+            console.error('Unexpected error fetching data:', error);
+            showNotification('שגיאה בלתי צפויה בטעינת הנתונים', 'danger');
         }
-        currentDebts = data;
-        renderDebtsTables(); // Updated function name
+    }
+    
+    function renderAllData() {
+        renderDebtsTables();
         calculateAndRenderDashboard();
+        renderGoals();
+        renderReminders();
+        renderCalendar();
+        checkUpcomingPayments();
+        generateAIRecommendations();
     }
 
     // Save or Update a debt
     document.getElementById('saveDebtBtn').addEventListener('click', async () => {
-        const debtId = document.getElementById('debtId').value;
-        const debt_type = document.getElementById('debtType').value; 
-        const name = document.getElementById('debtName').value;
-        const balance = parseFloat(document.getElementById('debtBalance').value);
-        const rate = parseFloat(document.getElementById('debtRate').value);
-        const term = parseFloat(document.getElementById('debtTerm').value);
-        const min_payment = parseFloat(document.getElementById('debtMinPayment').value);
-
-        const newDebt = { name, debt_type, balance, rate, term, min_payment };
-
-        let result;
-        if (debtId) {
-            result = await supabase
-       .from('debts')
-       .update(newDebt)
-       .eq('id', debtId);
-        } else {
-            result = await supabase
-       .from('debts')
-       .insert(newDebt);
+        const saveDebtBtn = document.getElementById('saveDebtBtn');
+        
+        // Validate form
+        if (!validateDebtForm()) {
+            showNotification('אנא תקן את השגיאות בטופס', 'danger');
+            return;
         }
+        
+        setButtonLoading(saveDebtBtn, true);
+        
+        try {
+            const debtId = document.getElementById('debtId').value;
+            const debt_type = document.getElementById('debtType').value; 
+            const name = document.getElementById('debtName').value;
+            const balance = parseFloat(document.getElementById('debtBalance').value);
+            const rate = parseFloat(document.getElementById('debtRate').value);
+            const term = parseFloat(document.getElementById('debtTerm').value);
+            const min_payment = parseFloat(document.getElementById('debtMinPayment').value);
 
-        if (result.error) {
-            console.error('Error saving debt:', result.error);
-        } else {
-            closeModal();
-            fetchDebts();
+            const newDebt = { name, debt_type, balance, rate, term, min_payment };
+
+            let result;
+            if (debtId) {
+                result = await supabase
+                    .from('debts')
+                    .update(newDebt)
+                    .eq('id', debtId);
+            } else {
+                result = await supabase
+                    .from('debts')
+                    .insert(newDebt);
+            }
+
+            if (result.error) {
+                console.error('Error saving debt:', result.error);
+                showNotification('שגיאה בשמירת החוב: ' + result.error.message, 'danger');
+            } else {
+                closeModal();
+                fetchAllData();
+                showNotification(debtId ? 'החוב עודכן בהצלחה!' : 'החוב נוסף בהצלחה!', 'success');
+            }
+        } catch (error) {
+            console.error('Unexpected error saving debt:', error);
+            showNotification('שגיאה בלתי צפויה בשמירת החוב', 'danger');
+        } finally {
+            setButtonLoading(saveDebtBtn, false);
         }
     });
 
     // Delete a debt
     async function deleteDebt(id) {
         if (confirm('האם אתה בטוח שברצונך למחוק את הרשומה הזו?')) {
-            const { error } = await supabase
-       .from('debts')
-       .delete()
-       .eq('id', id);
+            try {
+                const { error } = await supabase
+                    .from('debts')
+                    .delete()
+                    .eq('id', id);
 
-            if (error) {
-                console.error('Error deleting debt:', error);
-            } else {
-                fetchDebts();
+                if (error) {
+                    console.error('Error deleting debt:', error);
+                    showNotification('שגיאה במחיקת החוב: ' + error.message, 'danger');
+                } else {
+                    fetchAllData();
+                    showNotification('החוב נמחק בהצלחה!', 'success');
+                }
+            } catch (error) {
+                console.error('Unexpected error deleting debt:', error);
+                showNotification('שגיאה בלתי צפויה במחיקת החוב', 'danger');
             }
         }
     }
@@ -491,7 +1053,7 @@
 
             if (data.length === 0) {
                 const colspan = 5;
-                const message = tbodyId === 'loansTableBody'? 'אין הלוואות פעילות במערכת.' : 'אין חובות קצרי טווח במערכת.';
+                const message = tbodyId === 'loansTableBody' ? 'אין הלוואות פעילות במערכת.' : 'אין חובות קצרי טווח במערכת.';
                 tbody.innerHTML = `<tr><td colspan="${colspan}" class="has-text-centered">${message}</td></tr>`;
                 return;
             }
@@ -520,27 +1082,38 @@
         if (currentDebts.length === 0) {
             document.getElementById('totalDebt').textContent = '0 ₪';
             document.getElementById('totalMinPayment').textContent = '0 ₪';
-            document.getElementById('overallProgress').style.width = '0%';
-            document.getElementById('progressText').textContent = '0% מהקרן שולמה. הוסף רשומות כדי להתחיל.';
+            document.getElementById('avgInterest').textContent = '0%';
+            document.getElementById('monthsToFreedom').textContent = '0';
+            
             if (debtChart) debtChart.destroy();
+            if (debtTypeChart) debtTypeChart.destroy();
+            if (interestDistributionChart) interestDistributionChart.destroy();
+            if (paymentScheduleChart) paymentScheduleChart.destroy();
+            
             document.getElementById('resultsTableBody').innerHTML = `<tr><td>מינימום</td><td id="minInterest">--</td><td class="has-text-grey">--</td><td id="minDate">--</td></tr><tr><td><span class="has-text-info">כדור השלג (מומנטום)</span></td><td id="snowballInterest">--</td><td id="snowballSaved" class="has-text-success has-text-weight-bold">--</td><td id="snowballDate">--</td></tr><tr><td><span class="has-text-danger">מפולת החובות (חיסכון מקסימלי)</span></td><td id="avalancheInterest">--</td><td id="avalancheSaved" class="has-text-success has-text-weight-bold">--</td><td id="avalancheDate">--</td></tr>`;
             return;
         }
 
         const totalBalance = currentDebts.reduce((sum, d) => sum + d.balance, 0);
         const totalMinPayment = currentDebts.reduce((sum, d) => sum + d.min_payment, 0);
+        const avgInterest = currentDebts.reduce((sum, d) => sum + d.rate, 0) / currentDebts.length;
         
         document.getElementById('totalDebt').textContent = totalBalance.toFixed(2) + ' ₪';
         document.getElementById('totalMinPayment').textContent = totalMinPayment.toFixed(2) + ' ₪';
+        document.getElementById('avgInterest').textContent = avgInterest.toFixed(2) + '%';
 
-        const extraPayment = parseFloat(document.getElementById('extraPayment').value) |
-
-| 0; 
+        const extraPayment = parseFloat(document.getElementById('extraPayment').value) || 0;
 
         // 1. Run Simulations
         const minResults = runSimulation(currentDebts, 0, 'min');
         const snowballResults = runSimulation(currentDebts, extraPayment, 'snowball');
         const avalancheResults = runSimulation(currentDebts, extraPayment, 'avalanche');
+        
+        document.getElementById('monthsToFreedom').textContent = Math.min(
+            minResults.totalMonths, 
+            snowballResults.totalMonths, 
+            avalancheResults.totalMonths
+        );
 
         // 2. Render Results
         const formatter = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' });
@@ -567,8 +1140,9 @@
         const avalancheSaved = minResults.totalInterest - avalancheResults.totalInterest;
         document.getElementById('avalancheSaved').textContent = formatter.format(avalancheSaved) + ` (חיסכון של ${minResults.totalMonths - avalancheResults.totalMonths} חודשים)`;
 
-        // 3. Render Chart
+        // 3. Render Charts
         renderChart(minResults, snowballResults, avalancheResults, minResults.totalMonths);
+        renderAdvancedCharts();
     }
     
     document.getElementById('extraPayment').addEventListener('input', calculateAndRenderDashboard);
@@ -577,7 +1151,7 @@
         if (debtChart) debtChart.destroy();
         
         const ctx = document.getElementById('chartCanvas').getContext('2d');
-        const effectiveMaxMonths = min.totalMonths > 0? min.totalMonths : 1;
+        const effectiveMaxMonths = min.totalMonths > 0 ? min.totalMonths : 1;
 
         const labels = Array.from({ length: effectiveMaxMonths + 1 }, (_, i) => `חודש ${i}`);
         
@@ -634,30 +1208,175 @@
             }
         });
     }
+    
+    function renderAdvancedCharts() {
+        // Debt Type Distribution
+        if (debtTypeChart) debtTypeChart.destroy();
+        const debtTypeCtx = document.getElementById('debtTypeChart').getContext('2d');
+        
+        const loanTotal = currentDebts
+            .filter(d => d.debt_type === 'loan')
+            .reduce((sum, d) => sum + d.balance, 0);
+            
+        const debtTotal = currentDebts
+            .filter(d => d.debt_type === 'debt')
+            .reduce((sum, d) => sum + d.balance, 0);
+        
+        debtTypeChart = new Chart(debtTypeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['הלוואות', 'חובות קצרי טווח'],
+                datasets: [{
+                    data: [loanTotal, debtTotal],
+                    backgroundColor: [
+                        'rgba(54, 162, 235, 0.7)',
+                        'rgba(255, 99, 132, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(54, 162, 235, 1)',
+                        'rgba(255, 99, 132, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'התפלגות חובות לפי סוג'
+                    }
+                }
+            }
+        });
+        
+        // Interest Distribution
+        if (interestDistributionChart) interestDistributionChart.destroy();
+        const interestCtx = document.getElementById('interestDistributionChart').getContext('2d');
+        
+        const interestRanges = {
+            '0-5%': 0,
+            '5-10%': 0,
+            '10-15%': 0,
+            '15%+': 0
+        };
+        
+        currentDebts.forEach(debt => {
+            if (debt.rate <= 5) interestRanges['0-5%'] += debt.balance;
+            else if (debt.rate <= 10) interestRanges['5-10%'] += debt.balance;
+            else if (debt.rate <= 15) interestRanges['10-15%'] += debt.balance;
+            else interestRanges['15%+'] += debt.balance;
+        });
+        
+        interestDistributionChart = new Chart(interestCtx, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(interestRanges),
+                datasets: [{
+                    label: 'יתרה לפי טווח ריבית',
+                    data: Object.values(interestRanges),
+                    backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'יתרה לפי טווחי ריבית'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'יתרה (₪)'
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Payment Schedule
+        if (paymentScheduleChart) paymentScheduleChart.destroy();
+        const paymentCtx = document.getElementById('paymentScheduleChart').getContext('2d');
+        
+        const monthlyPayments = Array(12).fill(0);
+        currentDebts.forEach(debt => {
+            for (let i = 0; i < 12; i++) {
+                monthlyPayments[i] += debt.min_payment;
+            }
+        });
+        
+        paymentScheduleChart = new Chart(paymentCtx, {
+            type: 'line',
+            data: {
+                labels: ['ינו', "פבר", "מרץ", "אפר", "מאי", "יוני", "יולי", "אוג", "ספט", "אוק", "נוב", "דצמ"],
+                datasets: [{
+                    label: 'תשלומים חודשיים צפויים',
+                    data: monthlyPayments,
+                    borderColor: 'rgb(153, 102, 255)',
+                    backgroundColor: 'rgba(153, 102, 255, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'תשלומים חודשיים צפויים לשנה הקרובה'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'תשלום חודשי (₪)'
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     // --- D. MODAL & UTILITY ---
 
-    const modal = document.getElementById('debtModal');
-    const deleteBtn = modal.querySelector('.delete');
-    const closeBtns = modal.querySelectorAll('.close-modal');
+    const modals = document.querySelectorAll('.modal');
+    const closeBtns = document.querySelectorAll('.delete, .close-modal');
 
     function closeModal() {
-        modal.classList.remove('is-active');
+        modals.forEach(modal => {
+            modal.classList.remove('is-active');
+        });
+        
         document.getElementById('debtId').value = '';
-        document.getElementById('debtType').value = 'loan'; // Reset new field
+        document.getElementById('debtType').value = 'loan';
         document.getElementById('debtName').value = '';
         document.getElementById('debtBalance').value = '';
         document.getElementById('debtRate').value = '';
         document.getElementById('debtTerm').value = '';
         document.getElementById('debtMinPayment').value = '';
+        
+        // Reset error states
+        document.querySelectorAll('.help.is-danger').forEach(el => {
+            el.classList.add('is-hidden');
+        });
+        document.querySelectorAll('.input.is-danger').forEach(el => {
+            el.classList.remove('is-danger');
+        });
     }
 
-    deleteBtn.addEventListener('click', closeModal);
     closeBtns.forEach(btn => btn.addEventListener('click', closeModal));
 
     document.getElementById('showAddDebtModal').addEventListener('click', () => {
         document.getElementById('modalTitle').textContent = 'הוספת רשומה חדשה';
-        modal.classList.add('is-active');
+        document.getElementById('debtModal').classList.add('is-active');
     });
 
     // Edit functionality
@@ -666,41 +1385,815 @@
         if (debt) {
             document.getElementById('modalTitle').textContent = 'עריכת רשומה: ' + debt.name;
             document.getElementById('debtId').value = debt.id;
-            document.getElementById('debtType').value = debt.debt_type; // Load new field
+            document.getElementById('debtType').value = debt.debt_type;
             document.getElementById('debtName').value = debt.name;
             document.getElementById('debtBalance').value = debt.balance;
             document.getElementById('debtRate').value = debt.rate;
             document.getElementById('debtTerm').value = debt.term;
             document.getElementById('debtMinPayment').value = debt.min_payment;
-            modal.classList.add('is-active');
+            document.getElementById('debtModal').classList.add('is-active');
         }
     };
     
     // Export functionality
     document.getElementById('exportData').addEventListener('click', () => {
-        if (currentDebts.length === 0) return;
+        if (currentDebts.length === 0) {
+            showNotification('אין נתונים לייצוא', 'warning');
+            return;
+        }
 
-        const fields = ['id', 'name', 'debt_type', 'balance', 'rate', 'min_payment', 'term'];
-        const replacer = (key, value) => value === null? '' : value;
-        
-        let csv = currentDebts.map(row => 
-            fields.map(fieldName => JSON.stringify(row[fieldName], replacer)).join(',')
-        );
-        csv.unshift(fields.join(','));
-        csv = csv.join('\r\n');
+        try {
+            const fields = ['id', 'name', 'debt_type', 'balance', 'rate', 'min_payment', 'term'];
+            const replacer = (key, value) => value === null ? '' : value;
+            
+            let csv = currentDebts.map(row => 
+                fields.map(fieldName => JSON.stringify(row[fieldName], replacer)).join(',')
+            );
+            csv.unshift(fields.join(','));
+            csv = csv.join('\r\n');
 
-        const filename = 'Debt_Sculptor_Export.csv';
-        var downloadLink = document.createElement("a");
-        var blob = new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' });
-        var url = URL.createObjectURL(blob);
-        
-        downloadLink.href = url;
-        downloadLink.download = filename;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
+            const filename = 'Debt_Sculptor_Export.csv';
+            var downloadLink = document.createElement("a");
+            var blob = new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' });
+            var url = URL.createObjectURL(blob);
+            
+            downloadLink.href = url;
+            downloadLink.download = filename;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            showNotification('הנתונים יוצאו בהצלחה!', 'success');
+        } catch (error) {
+            console.error('Error exporting data:', error);
+            showNotification('שגיאה בייצוא הנתונים: ' + error.message, 'danger');
+        }
     });
 
+    // ----------------------------------------------------------------------
+    // V. NEW FEATURES IMPLEMENTATION
+    // ----------------------------------------------------------------------
+    
+    // --- A. GOALS MANAGEMENT ---
+    
+    document.getElementById('showAddGoalModal').addEventListener('click', () => {
+        document.getElementById('goalModalTitle').textContent = 'הוספת יעד חדש';
+        document.getElementById('goalId').value = '';
+        document.getElementById('goalName').value = '';
+        document.getElementById('goalType').value = 'debt_free';
+        document.getElementById('goalTarget').value = '';
+        
+        // Set default date to 3 months from now
+        const defaultDate = new Date();
+        defaultDate.setMonth(defaultDate.getMonth() + 3);
+        document.getElementById('goalDate').value = defaultDate.toISOString().split('T')[0];
+        
+        document.getElementById('goalModal').classList.add('is-active');
+    });
+    
+    document.getElementById('saveGoalBtn').addEventListener('click', async () => {
+        const saveGoalBtn = document.getElementById('saveGoalBtn');
+        setButtonLoading(saveGoalBtn, true);
+        
+        try {
+            const goalId = document.getElementById('goalId').value;
+            const name = document.getElementById('goalName').value;
+            const type = document.getElementById('goalType').value;
+            const target = parseFloat(document.getElementById('goalTarget').value);
+            const target_date = document.getElementById('goalDate').value;
+            
+            const newGoal = { name, type, target, target_date };
+            
+            let result;
+            if (goalId) {
+                result = await supabase
+                    .from('goals')
+                    .update(newGoal)
+                    .eq('id', goalId);
+            } else {
+                result = await supabase
+                    .from('goals')
+                    .insert(newGoal);
+            }
+            
+            if (result.error) {
+                console.error('Error saving goal:', result.error);
+                showNotification('שגיאה בשמירת היעד: ' + result.error.message, 'danger');
+            } else {
+                closeModal();
+                fetchAllData();
+                showNotification(goalId ? 'היעד עודכן בהצלחה!' : 'היעד נוסף בהצלחה!', 'success');
+            }
+        } catch (error) {
+            console.error('Unexpected error saving goal:', error);
+            showNotification('שגיאה בלתי צפויה בשמירת היעד', 'danger');
+        } finally {
+            setButtonLoading(saveGoalBtn, false);
+        }
+    });
+    
+    function renderGoals() {
+        const goalsContainer = document.getElementById('goalsContainer');
+        goalsContainer.innerHTML = '';
+        
+        if (currentGoals.length === 0) {
+            goalsContainer.innerHTML = `
+                <div class="column is-full">
+                    <div class="box has-text-centered">
+                        <p class="has-text-grey">אין יעדים מוגדרים. לחץ על "הוסף יעד חדש" כדי להתחיל.</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        currentGoals.forEach(goal => {
+            const progress = calculateGoalProgress(goal);
+            const goalCard = document.createElement('div');
+            goalCard.className = 'column is-one-third';
+            goalCard.innerHTML = `
+                <div class="box dashboard-card">
+                    <h4 class="title is-5">${goal.name}</h4>
+                    <p class="subtitle is-6">${formatGoalType(goal.type)}</p>
+                    
+                    <div class="goal-progress mb-3">
+                        <progress class="progress is-primary" value="${progress}" max="100"></progress>
+                        <div class="progress-value">${progress}%</div>
+                    </div>
+                    
+                    <p class="is-size-7">יעד: ${goal.target.toLocaleString()} ₪</p>
+                    <p class="is-size-7">תאריך יעד: ${new Date(goal.target_date).toLocaleDateString('he-IL')}</p>
+                    
+                    <div class="buttons is-right mt-3">
+                        <button class="button is-small is-info" onclick="editGoal(${goal.id})">ערוך</button>
+                        <button class="button is-small is-danger" onclick="deleteGoal(${goal.id})">מחק</button>
+                    </div>
+                </div>
+            `;
+            goalsContainer.appendChild(goalCard);
+        });
+    }
+    
+    function calculateGoalProgress(goal) {
+        const totalDebt = currentDebts.reduce((sum, d) => sum + d.balance, 0);
+        
+        switch(goal.type) {
+            case 'debt_free':
+                const initialDebt = 100000; // This should be stored when goal is created
+                return Math.min(100, ((initialDebt - totalDebt) / initialDebt) * 100);
+            case 'debt_reduction':
+                return Math.min(100, (goal.target / totalDebt) * 100);
+            case 'savings':
+                // For savings goals, we'd need to track savings separately
+                return 0;
+            default:
+                return 0;
+        }
+    }
+    
+    function formatGoalType(type) {
+        const types = {
+            'debt_free': 'חופש מחובות',
+            'debt_reduction': 'הפחתת חוב',
+            'savings': 'חיסכון'
+        };
+        return types[type] || type;
+    }
+    
+    window.editGoal = (id) => {
+        const goal = currentGoals.find(g => g.id === id);
+        if (goal) {
+            document.getElementById('goalModalTitle').textContent = 'עריכת יעד: ' + goal.name;
+            document.getElementById('goalId').value = goal.id;
+            document.getElementById('goalName').value = goal.name;
+            document.getElementById('goalType').value = goal.type;
+            document.getElementById('goalTarget').value = goal.target;
+            document.getElementById('goalDate').value = goal.target_date.split('T')[0];
+            document.getElementById('goalModal').classList.add('is-active');
+        }
+    };
+    
+    window.deleteGoal = async (id) => {
+        if (confirm('האם אתה בטוח שברצונך למחוק את היעד הזה?')) {
+            try {
+                const { error } = await supabase
+                    .from('goals')
+                    .delete()
+                    .eq('id', id);
+                    
+                if (error) {
+                    console.error('Error deleting goal:', error);
+                    showNotification('שגיאה במחיקת היעד: ' + error.message, 'danger');
+                } else {
+                    fetchAllData();
+                    showNotification('היעד נמחק בהצלחה!', 'success');
+                }
+            } catch (error) {
+                console.error('Unexpected error deleting goal:', error);
+                showNotification('שגיאה בלתי צפויה במחיקת היעד', 'danger');
+            }
+        }
+    };
+    
+    // --- B. CALENDAR AND REMINDERS ---
+    
+    function initCalendarDropdowns() {
+        const monthSelect = document.getElementById('calendarMonth');
+        const yearSelect = document.getElementById('calendarYear');
+        
+        // Populate months
+        const months = [
+            'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+            'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+        ];
+        
+        months.forEach((month, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = month;
+            if (index === new Date().getMonth()) {
+                option.selected = true;
+            }
+            monthSelect.appendChild(option);
+        });
+        
+        // Populate years
+        const currentYear = new Date().getFullYear();
+        for (let year = currentYear - 1; year <= currentYear + 2; year++) {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year;
+            if (year === currentYear) {
+                option.selected = true;
+            }
+            yearSelect.appendChild(option);
+        }
+        
+        // Add event listeners
+        monthSelect.addEventListener('change', renderCalendar);
+        yearSelect.addEventListener('change', renderCalendar);
+        
+        // Add reminder button
+        document.getElementById('addReminder').addEventListener('click', () => {
+            // Populate debt dropdown
+            const debtSelect = document.getElementById('reminderDebt');
+            debtSelect.innerHTML = '';
+            
+            currentDebts.forEach(debt => {
+                const option = document.createElement('option');
+                option.value = debt.id;
+                option.textContent = debt.name;
+                debtSelect.appendChild(option);
+            });
+            
+            // Set default date to today
+            document.getElementById('reminderDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('reminderDescription').value = '';
+            
+            document.getElementById('reminderModal').classList.add('is-active');
+        });
+        
+        // Save reminder
+        document.getElementById('saveReminderBtn').addEventListener('click', async () => {
+            const saveReminderBtn = document.getElementById('saveReminderBtn');
+            setButtonLoading(saveReminderBtn, true);
+            
+            try {
+                const debt_id = document.getElementById('reminderDebt').value;
+                const reminder_date = document.getElementById('reminderDate').value;
+                const description = document.getElementById('reminderDescription').value;
+                
+                const newReminder = { debt_id, reminder_date, description };
+                
+                const { data, error } = await supabase
+                    .from('reminders')
+                    .insert(newReminder);
+                    
+                if (error) {
+                    console.error('Error saving reminder:', error);
+                    showNotification('שגיאה בשמירת התזכורת: ' + error.message, 'danger');
+                } else {
+                    closeModal();
+                    fetchAllData();
+                    showNotification('התזכורת נוספה בהצלחה!', 'success');
+                }
+            } catch (error) {
+                console.error('Unexpected error saving reminder:', error);
+                showNotification('שגיאה בלתי צפויה בשמירת התזכורת', 'danger');
+            } finally {
+                setButtonLoading(saveReminderBtn, false);
+            }
+        });
+        
+        // Export calendar
+        document.getElementById('exportCalendar').addEventListener('click', () => {
+            if (currentReminders.length === 0) {
+                showNotification('אין תזכורות לייצוא', 'warning');
+                return;
+            }
+            
+            // Create ICS file content
+            let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Debt Sculptor//EN\n";
+            
+            currentReminders.forEach(reminder => {
+                const debt = currentDebts.find(d => d.id === reminder.debt_id);
+                if (!debt) return;
+                
+                const date = new Date(reminder.reminder_date);
+                const formattedDate = date.toISOString().replace(/-|:|\.\d+/g, '');
+                
+                icsContent += "BEGIN:VEVENT\n";
+                icsContent += `DTSTART:${formattedDate}\n`;
+                icsContent += `SUMMARY:תשלום - ${debt.name}\n`;
+                icsContent += `DESCRIPTION:${reminder.description || `תשלום חודשי עבור ${debt.name}`}\n`;
+                icsContent += "END:VEVENT\n";
+            });
+            
+            icsContent += "END:VCALENDAR";
+            
+            // Download file
+            const blob = new Blob([icsContent], { type: 'text/calendar' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Debt_Payments.ics';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification('לוח התשלומים יוצא בהצלחה!', 'success');
+        });
+    }
+    
+    function renderCalendar() {
+        const month = parseInt(document.getElementById('calendarMonth').value);
+        const year = parseInt(document.getElementById('calendarYear').value);
+        
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const daysInMonth = lastDay.getDate();
+        
+        let calendarHTML = `
+            <div class="calendar-header has-text-centered mb-4">
+                <h4 class="title is-4">${document.getElementById('calendarMonth').options[month].text} ${year}</h4>
+            </div>
+            <div class="calendar-grid">
+                <div class="columns is-mobile is-gapless">
+                    <div class="column has-text-centered"><strong>א</strong></div>
+                    <div class="column has-text-centered"><strong>ב</strong></div>
+                    <div class="column has-text-centered"><strong>ג</strong></div>
+                    <div class="column has-text-centered"><strong>ד</strong></div>
+                    <div class="column has-text-centered"><strong>ה</strong></div>
+                    <div class="column has-text-centered"><strong>ו</strong></div>
+                    <div class="column has-text-centered"><strong>ש</strong></div>
+                </div>
+        `;
+        
+        // Start from the correct day of week (0 = Sunday, but we want Sunday as the last day)
+        let dayOfWeek = firstDay.getDay();
+        if (dayOfWeek === 0) dayOfWeek = 6; // Sunday becomes 6
+        else dayOfWeek--; // Other days shift down
+        
+        let dayCounter = 1;
+        
+        for (let week = 0; week < 6; week++) {
+            calendarHTML += '<div class="columns is-mobile is-gapless">';
+            
+            for (let day = 0; day < 7; day++) {
+                if ((week === 0 && day < dayOfWeek) || dayCounter > daysInMonth) {
+                    calendarHTML += '<div class="column has-text-centered" style="height: 40px;"></div>';
+                } else {
+                    const currentDate = new Date(year, month, dayCounter);
+                    const isToday = currentDate.toDateString() === new Date().toDateString();
+                    const hasPayment = currentReminders.some(r => {
+                        const reminderDate = new Date(r.reminder_date);
+                        return reminderDate.getDate() === dayCounter && 
+                               reminderDate.getMonth() === month && 
+                               reminderDate.getFullYear() === year;
+                    });
+                    
+                    let dayClass = 'calendar-day';
+                    if (isToday) dayClass += ' today';
+                    if (hasPayment) dayClass += ' has-payment';
+                    
+                    calendarHTML += `
+                        <div class="column has-text-centered">
+                            <div class="${dayClass}" data-date="${year}-${month + 1}-${dayCounter}">
+                                ${dayCounter}
+                            </div>
+                        </div>
+                    `;
+                    
+                    dayCounter++;
+                }
+            }
+            
+            calendarHTML += '</div>';
+            
+            if (dayCounter > daysInMonth) break;
+        }
+        
+        calendarHTML += '</div>';
+        document.getElementById('calendarView').innerHTML = calendarHTML;
+    }
+    
+    function renderReminders() {
+        const remindersTableBody = document.getElementById('remindersTableBody');
+        remindersTableBody.innerHTML = '';
+        
+        if (currentReminders.length === 0) {
+            remindersTableBody.innerHTML = '<tr><td colspan="5" class="has-text-centered">אין תזכורות פעילות.</td></tr>';
+            return;
+        }
+        
+        currentReminders.forEach(reminder => {
+            const debt = currentDebts.find(d => d.id === reminder.debt_id);
+            if (!debt) return;
+            
+            const row = remindersTableBody.insertRow();
+            row.insertCell().textContent = new Date(reminder.reminder_date).toLocaleDateString('he-IL');
+            row.insertCell().textContent = debt.name;
+            row.insertCell().textContent = debt.min_payment.toFixed(2) + ' ₪';
+            
+            const statusCell = row.insertCell();
+            const today = new Date();
+            const reminderDate = new Date(reminder.reminder_date);
+            
+            let status = 'מתוכנן';
+            let statusClass = 'has-text-info';
+            
+            if (reminderDate < today) {
+                status = 'מעוכב';
+                statusClass = 'has-text-danger';
+            } else if (reminderDate.toDateString() === today.toDateString()) {
+                status = 'היום';
+                statusClass = 'has-text-warning';
+            }
+            
+            statusCell.innerHTML = `<span class="${statusClass}">${status}</span>`;
+            
+            const actionsCell = row.insertCell();
+            actionsCell.innerHTML = `
+                <button class="button is-small is-danger" onclick="deleteReminder(${reminder.id})">מחק</button>
+            `;
+        });
+    }
+    
+    window.deleteReminder = async (id) => {
+        if (confirm('האם אתה בטוח שברצונך למחוק את התזכורת הזו?')) {
+            try {
+                const { error } = await supabase
+                    .from('reminders')
+                    .delete()
+                    .eq('id', id);
+                    
+                if (error) {
+                    console.error('Error deleting reminder:', error);
+                    showNotification('שגיאה במחיקת התזכורת: ' + error.message, 'danger');
+                } else {
+                    fetchAllData();
+                    showNotification('התזכורת נמחקה בהצלחה!', 'success');
+                }
+            } catch (error) {
+                console.error('Unexpected error deleting reminder:', error);
+                showNotification('שגיאה בלתי צפויה במחיקת התזכורת', 'danger');
+            }
+        }
+    };
+    
+    function checkUpcomingPayments() {
+        const upcomingAlerts = document.getElementById('upcomingAlerts');
+        upcomingAlerts.innerHTML = '';
+        
+        const today = new Date();
+        const nextWeek = new Date(today);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        
+        const upcomingReminders = currentReminders.filter(reminder => {
+            const reminderDate = new Date(reminder.reminder_date);
+            return reminderDate >= today && reminderDate <= nextWeek;
+        });
+        
+        if (upcomingReminders.length === 0) {
+            upcomingAlerts.innerHTML = '<p class="has-text-grey">אין התראות פעילות</p>';
+            return;
+        }
+        
+        upcomingReminders.forEach(reminder => {
+            const debt = currentDebts.find(d => d.id === reminder.debt_id);
+            if (!debt) return;
+            
+            const reminderDate = new Date(reminder.reminder_date);
+            const daysUntil = Math.ceil((reminderDate - today) / (1000 * 60 * 60 * 24));
+            
+            let alertClass = 'notification is-warning is-light';
+            if (daysUntil === 0) alertClass = 'notification is-danger is-light';
+            else if (daysUntil <= 2) alertClass = 'notification is-warning';
+            
+            const alert = document.createElement('div');
+            alert.className = alertClass + ' mb-2';
+            alert.innerHTML = `
+                <button class="delete" onclick="this.parentElement.remove()"></button>
+                <p class="is-size-7"><strong>${debt.name}</strong></p>
+                <p class="is-size-7">${reminderDate.toLocaleDateString('he-IL')} (בעוד ${daysUntil} ימים)</p>
+            `;
+            upcomingAlerts.appendChild(alert);
+        });
+    }
+    
+    // --- C. BACKUP AND RESTORE ---
+    
+    document.getElementById('localBackup').addEventListener('click', () => {
+        const backupData = {
+            debts: currentDebts,
+            goals: currentGoals,
+            reminders: currentReminders,
+            timestamp: new Date().toISOString()
+        };
+        
+        localStorage.setItem('debtSculptorBackup', JSON.stringify(backupData));
+        showNotification('גיבוי מקומי נוצר בהצלחה!', 'success');
+        loadBackupHistory();
+    });
+    
+    document.getElementById('localRestore').addEventListener('click', () => {
+        if (confirm('האם אתה בטוח שברצונך לשחזר מגיבוי מקומי? זה יחליף את כל הנתונים הנוכחיים.')) {
+            const backupData = localStorage.getItem('debtSculptorBackup');
+            if (!backupData) {
+                showNotification('לא נמצא גיבוי מקומי', 'warning');
+                return;
+            }
+            
+            try {
+                const parsedData = JSON.parse(backupData);
+                restoreData(parsedData);
+            } catch (error) {
+                console.error('Error restoring from local backup:', error);
+                showNotification('שגיאה בשחזור הגיבוי', 'danger');
+            }
+        }
+    });
+    
+    document.getElementById('fileBackup').addEventListener('click', () => {
+        const backupData = {
+            debts: currentDebts,
+            goals: currentGoals,
+            reminders: currentReminders,
+            timestamp: new Date().toISOString()
+        };
+        
+        const dataStr = JSON.stringify(backupData, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `debt_sculptor_backup_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        showNotification('קובץ הגיבוי הורד בהצלחה!', 'success');
+    });
+    
+    document.getElementById('fileRestore').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const backupData = JSON.parse(e.target.result);
+                if (confirm('האם אתה בטוח שברצונך לשחזר מקובץ? זה יחליף את כל הנתונים הנוכחיים.')) {
+                    restoreData(backupData);
+                }
+            } catch (error) {
+                console.error('Error restoring from file:', error);
+                showNotification('שגיאה בקריאת קובץ הגיבוי', 'danger');
+            }
+        };
+        reader.readAsText(file);
+        
+        // Reset file input
+        e.target.value = '';
+    });
+    
+    async function restoreData(backupData) {
+        try {
+            // Restore debts
+            if (backupData.debts && backupData.debts.length > 0) {
+                // First, delete all existing debts
+                const { error: deleteError } = await supabase
+                    .from('debts')
+                    .delete()
+                    .neq('id', 0); // This will delete all user's debts
+                    
+                if (deleteError) throw deleteError;
+                
+                // Then insert the backup debts
+                const { error: insertError } = await supabase
+                    .from('debts')
+                    .insert(backupData.debts);
+                    
+                if (insertError) throw insertError;
+            }
+            
+            // Restore goals
+            if (backupData.goals && backupData.goals.length > 0) {
+                const { error: deleteError } = await supabase
+                    .from('goals')
+                    .delete()
+                    .neq('id', 0);
+                    
+                if (deleteError) throw deleteError;
+                
+                const { error: insertError } = await supabase
+                    .from('goals')
+                    .insert(backupData.goals);
+                    
+                if (insertError) throw insertError;
+            }
+            
+            // Restore reminders
+            if (backupData.reminders && backupData.reminders.length > 0) {
+                const { error: deleteError } = await supabase
+                    .from('reminders')
+                    .delete()
+                    .neq('id', 0);
+                    
+                if (deleteError) throw deleteError;
+                
+                const { error: insertError } = await supabase
+                    .from('reminders')
+                    .insert(backupData.reminders);
+                    
+                if (insertError) throw insertError;
+            }
+            
+            showNotification('הנתונים שוחזרו בהצלחה!', 'success');
+            fetchAllData();
+        } catch (error) {
+            console.error('Error restoring data:', error);
+            showNotification('שגיאה בשחזור הנתונים: ' + error.message, 'danger');
+        }
+    }
+    
+    function loadBackupHistory() {
+        const backupHistory = document.getElementById('backupHistory');
+        const localBackup = localStorage.getItem('debtSculptorBackup');
+        
+        if (!localBackup) {
+            backupHistory.innerHTML = '<p class="has-text-grey">אין גיבויים מקומיים</p>';
+            return;
+        }
+        
+        try {
+            const backupData = JSON.parse(localBackup);
+            const backupDate = new Date(backupData.timestamp);
+            
+            backupHistory.innerHTML = `
+                <div class="is-size-7">
+                    <p><strong>גיבוי אחרון:</strong> ${backupDate.toLocaleDateString('he-IL')} ${backupDate.toLocaleTimeString('he-IL')}</p>
+                    <p><strong>מספר חובות:</strong> ${backupData.debts ? backupData.debts.length : 0}</p>
+                    <p><strong>מספר יעדים:</strong> ${backupData.goals ? backupData.goals.length : 0}</p>
+                </div>
+            `;
+        } catch (error) {
+            console.error('Error parsing backup history:', error);
+            backupHistory.innerHTML = '<p class="has-text-grey">שגיאה בטעינת היסטוריית הגיבויים</p>';
+        }
+    }
+    
+    // --- D. AI RECOMMENDATIONS ---
+    
+    function generateAIRecommendations() {
+        const aiContainer = document.getElementById('aiRecommendations');
+        const analysisContainer = document.getElementById('financialAnalysis');
+        
+        if (currentDebts.length === 0) {
+            aiContainer.innerHTML = `
+                <div class="notification is-light">
+                    <p>הוסף חובות כדי לקבל המלצות AI מותאמות אישית.</p>
+                </div>
+            `;
+            analysisContainer.innerHTML = '';
+            return;
+        }
+        
+        // Calculate key metrics for AI analysis
+        const totalDebt = currentDebts.reduce((sum, d) => sum + d.balance, 0);
+        const totalMonthlyPayment = currentDebts.reduce((sum, d) => sum + d.min_payment, 0);
+        const highestInterestDebt = [...currentDebts].sort((a, b) => b.rate - a.rate)[0];
+        const lowestBalanceDebt = [...currentDebts].sort((a, b) => a.balance - b.balance)[0];
+        const debtToIncomeRatio = totalMonthlyPayment / 10000; // Assuming 10,000 income for demo
+        
+        // Generate recommendations
+        let recommendations = [];
+        
+        if (debtToIncomeRatio > 0.5) {
+            recommendations.push({
+                type: 'warning',
+                title: 'יחס חוב-הכנסה גבוה',
+                message: 'יחס החוב-הכנסה שלך גבוה. שקול לצמצם הוצאות או לחפש מקורות הכנסה נוספים.'
+            });
+        }
+        
+        if (highestInterestDebt && highestInterestDebt.rate > 15) {
+            recommendations.push({
+                type: 'danger',
+                title: 'ריבית גבוהה מאוד',
+                message: `ל${highestInterestDebt.name} יש ריבית של ${highestInterestDebt.rate}%. שקול לפרוע חוב זה ראשון או לחפש אפשרויות מימון חלופיות.`
+            });
+        }
+        
+        if (lowestBalanceDebt && lowestBalanceDebt.balance < totalDebt * 0.1) {
+            recommendations.push({
+                type: 'success',
+                title: 'הזדמנות לניצחון מהיר',
+                message: `אתה קרוב לסיום התשלומים על ${lowestBalanceDebt.name}. השלמת חוב זה תיתן לך מוטיבציה ותשחרר ${lowestBalanceDebt.min_payment}₪ לחובות אחרים.`
+            });
+        }
+        
+        // Default recommendation based on debt profile
+        const avalancheMonths = runSimulation(currentDebts, 100, 'avalanche').totalMonths;
+        const snowballMonths = runSimulation(currentDebts, 100, 'snowball').totalMonths;
+        
+        if (avalancheMonths < snowballMonths) {
+            recommendations.push({
+                type: 'info',
+                title: 'אסטרטגיית מפולת החובות',
+                message: 'על בסיס הפרופיל הפיננסי שלך, אסטרטגיית "מפולת החובות" תחסוך לך יותר כסף בטווח הארוך.'
+            });
+        } else {
+            recommendations.push({
+                type: 'info',
+                title: 'אסטרטגיית כדור השלג',
+                message: 'על בסיס הפרופיל הפיננסי שלך, אסטרטגיית "כדור השלג" תעניק לך מוטיבציה ותוצאות מהירות יותר.'
+            });
+        }
+        
+        // Render recommendations
+        if (recommendations.length === 0) {
+            aiContainer.innerHTML = `
+                <div class="notification is-light">
+                    <p>המצב הפיננסי שלך יציב. המשך בתשלומים השוטפים.</p>
+                </div>
+            `;
+        } else {
+            aiContainer.innerHTML = recommendations.map(rec => `
+                <div class="notification is-${rec.type} mb-3">
+                    <h4 class="title is-5">${rec.title}</h4>
+                    <p>${rec.message}</p>
+                </div>
+            `).join('');
+        }
+        
+        // Render financial analysis
+        analysisContainer.innerHTML = `
+            <div class="columns is-multiline">
+                <div class="column is-one-third">
+                    <div class="box has-text-centered">
+                        <p class="heading">סה"כ חוב</p>
+                        <p class="title">${totalDebt.toLocaleString()} ₪</p>
+                    </div>
+                </div>
+                <div class="column is-one-third">
+                    <div class="box has-text-centered">
+                        <p class="heading">תשלום חודשי</p>
+                        <p class="title">${totalMonthlyPayment.toLocaleString()} ₪</p>
+                    </div>
+                </div>
+                <div class="column is-one-third">
+                    <div class="box has-text-centered">
+                        <p class="heading">ריבית ממוצעת</p>
+                        <p class="title">${(currentDebts.reduce((sum, d) => sum + d.rate, 0) / currentDebts.length).toFixed(2)}%</p>
+                    </div>
+                </div>
+                <div class="column is-one-third">
+                    <div class="box has-text-centered">
+                        <p class="heading">חוב עם הריבית הגבוהה ביותר</p>
+                        <p class="title is-6">${highestInterestDebt ? highestInterestDebt.name : '--'}</p>
+                        <p class="subtitle is-6">${highestInterestDebt ? highestInterestDebt.rate + '%' : '--'}</p>
+                    </div>
+                </div>
+                <div class="column is-one-third">
+                    <div class="box has-text-centered">
+                        <p class="heading">חוב עם היתרה הנמוכה ביותר</p>
+                        <p class="title is-6">${lowestBalanceDebt ? lowestBalanceDebt.name : '--'}</p>
+                        <p class="subtitle is-6">${lowestBalanceDebt ? lowestBalanceDebt.balance.toLocaleString() + '₪' : '--'}</p>
+                    </div>
+                </div>
+                <div class="column is-one-third">
+                    <div class="box has-text-centered">
+                        <p class="heading">יחס חוב-הכנסה מוערך</p>
+                        <p class="title">${(debtToIncomeRatio * 100).toFixed(1)}%</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 </script>
 
 </body>
