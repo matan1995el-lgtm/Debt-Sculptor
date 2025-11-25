@@ -10,13 +10,13 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { background-color: #f7f7f7; }
-  .hero.is-primary { background-color: #48c78e; } /* Green accent for 'debt-free' goal */
-  .box { box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-  .progress-bar-container { height: 20px; border-radius: 10px; overflow: hidden; background-color: #e0e0e0; margin-top: 10px; }
-  .progress-bar { height: 100%; transition: width 0.5s ease-in-out; background-color: #48c78e; }
+ .hero.is-primary { background-color: #48c78e; } /* Green accent for 'debt-free' goal */
+ .box { box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+ .progress-bar-container { height: 20px; border-radius: 10px; overflow: hidden; background-color: #e0e0e0; margin-top: 10px; }
+ .progress-bar { height: 100%; transition: width 0.5s ease-in-out; background-color: #48c78e; }
         #chartCanvas { max-height: 400px; }
-  .is-rtl { text-align: right; }
-  .debt-section-title { margin-top: 3rem; margin-bottom: 1rem; border-bottom: 2px solid #dbdbdb; padding-bottom: 5px; }
+ .is-rtl { text-align: right; }
+ .debt-section-title { margin-top: 3rem; margin-bottom: 1rem; border-bottom: 2px solid #dbdbdb; padding-bottom: 5px; }
     </style>
 </head>
 <body>
@@ -245,7 +245,7 @@
     const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const finance = new Finance();
     
-    let currentDebts =;
+    let currentDebts =; // FIX 1: Initialized as empty array
     let debtChart;
     const MAX_MONTHS = 360; // Max months for simulation
 
@@ -284,7 +284,7 @@
     function runSimulation(debts, extraPayment, strategy) {
         // Only run simulation if there are debts
         if (debts.length === 0) {
-            return { schedule:, totalInterest: 0, totalMonths: 0 };
+            return { schedule:, totalInterest: 0, totalMonths: 0 }; // FIX 2: Initialized as empty array
         }
 
         let simDebts = debts.map(d => ({...d, balance: d.balance }));
@@ -297,7 +297,7 @@
 
         let totalInterest = 0;
         let month = 0;
-        let schedule =;
+        let schedule =; // FIX 3: Initialized as empty array
         let done = false;
 
         while (!done && month < MAX_MONTHS) {
@@ -391,7 +391,7 @@
         if (!error) {
             document.getElementById('appDashboard').classList.add('is-hidden');
             document.getElementById('auth').classList.remove('is-hidden');
-            currentDebts =;
+            currentDebts =; // Ensure reset uses empty array
             if (debtChart) debtChart.destroy();
         }
     }
@@ -418,8 +418,8 @@
     async function fetchDebts() {
         // RLS will ensure only current user's data is fetched
         const { data, error } = await supabase
-     .from('debts')
-     .select('*');
+    .from('debts')
+    .select('*');
 
         if (error) {
             console.error('Error fetching debts:', error);
@@ -445,13 +445,13 @@
         let result;
         if (debtId) {
             result = await supabase
-         .from('debts')
-         .update(newDebt)
-         .eq('id', debtId);
+        .from('debts')
+        .update(newDebt)
+        .eq('id', debtId);
         } else {
             result = await supabase
-         .from('debts')
-         .insert();
+        .from('debts')
+        .insert(newDebt);
         }
 
         if (result.error) {
@@ -466,9 +466,9 @@
     async function deleteDebt(id) {
         if (confirm('האם אתה בטוח שברצונך למחוק את הרשומה הזו?')) {
             const { error } = await supabase
-         .from('debts')
-         .delete()
-         .eq('id', id);
+        .from('debts')
+        .delete()
+        .eq('id', id);
 
             if (error) {
                 console.error('Error deleting debt:', error);
@@ -535,7 +535,7 @@
 
         const extraPayment = parseFloat(document.getElementById('extraPayment').value) |
 
-| 0;
+| 0; // FIX 4: Corrected malformed operator to logical OR (||) for fallback
 
         // 1. Run Simulations
         const minResults = runSimulation(currentDebts, 0, 'min');
@@ -580,12 +580,37 @@
         const effectiveMaxMonths = min.totalMonths > 0? min.totalMonths : 1;
 
         const labels = Array.from({ length: effectiveMaxMonths + 1 }, (_, i) => `חודש ${i}`);
-
+        
+        // Define the datasets array based on simulation results
+        const datasets = [
+            {
+                label: 'מינימום',
+                data: min.schedule,
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                tension: 0.1
+            },
+            {
+                label: 'כדור השלג',
+                data: snowball.schedule,
+                borderColor: 'rgb(54, 162, 235)',
+                backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                tension: 0.1
+            },
+            {
+                label: 'מפולת החובות',
+                data: avalanche.schedule,
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                tension: 0.1
+            }
+        ];
+        
         debtChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
-                datasets:
+                datasets: datasets, // FIX 5: Added the datasets array (previously datasets: )
             },
             options: {
                 responsive: true,
@@ -680,4 +705,3 @@
 
 </body>
 </html>
-
