@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Debt Sculptor | אפליקציית ניהול חובות</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/financejs@4.1.0/lib/finance.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { background-color: #f7f7f7; }
+  .hero.is-primary { background-color: #48c78e; } /* Green accent for 'debt-free' goal */
+  .box { box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+  .progress-bar-container { height: 20px; border-radius: 10px; overflow: hidden; background-color: #e0e0e0; margin-top: 10px; }
+  .progress-bar { height: 100%; transition: width 0.5s ease-in-out; background-color: #48c78e; }
+        #chartCanvas { max-height: 400px; }
+  .is-rtl { text-align: right; }
+  .debt-section-title { margin-top: 3rem; margin-bottom: 1rem; border-bottom: 2px solid #dbdbdb; padding-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+<section class="hero is-primary is-bold">
+    <div class="hero-body is-rtl">
+        <div class="container">
+            <h1 class="title">
+                Debt Sculptor | מפסל החובות
+            </h1>
+            <p class="subtitle">
+                הדרך היעילה, היפה והאפקטיבית שלך לחופש פיננסי.
+            </p>
+        </div>
+    </div>
+</section>
+
+<section id="auth" class="section">
+    <div class="container is-rtl">
+        <div class="columns is-centered">
+            <div class="column is-half">
+                <div class="box">
+                    <h2 class="title is-4 has-text-centered">כניסה / הרשמה</h2>
+                    <div class="field">
+                        <label class="label">אימייל</label>
+                        <div class="control">
+                            <input id="email" class="input" type="email" placeholder="הכנס אימייל">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">סיסמה (לפחות 6 תווים)</label>
+                        <div class="control">
+                            <input id="password" class="input" type="password" placeholder="הכנס סיסמה">
+                        </div>
+                    </div>
+                    <div class="field is-grouped is-grouped-centered">
+                        <div class="control">
+                            <button id="signInBtn" class="button is-primary">כניסה</button>
+                        </div>
+                        <div class="control">
+                            <button id="signUpBtn" class="button is-link is-light">הרשמה</button>
+                        </div>
+                    </div>
+                    <p id="authMessage" class="help has-text-centered has-text-danger"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="appDashboard" class="section is-hidden">
+    <div class="container is-rtl">
+        <p class="is-size-5 has-text-right">שלום, <span id="userEmailDisplay" class="has-text-weight-bold"></span>! | <a id="signOutBtn" href="#">יציאה</a></p>
+
+        <div class="columns">
+            <div class="column is-one-quarter">
+                <div class="box has-background-light">
+                    <p class="title is-6">סה"כ חובות והלוואות</p>
+                    <p id="totalDebt" class="subtitle is-3 has-text-primary">0 ₪</p>
+                </div>
+            </div>
+            <div class="column is-one-quarter">
+                <div class="box has-background-light">
+                    <p class="title is-6">תשלום חודשי מינימלי</p>
+                    <p id="totalMinPayment" class="subtitle is-3">0 ₪</p>
+                </div>
+            </div>
+            <div class="column is-half">
+                <div class="box">
+                    <p class="title is-6">התקדמות כללית</p>
+                    <div class="progress-bar-container">
+                        <div id="overallProgress" class="progress-bar" style="width: 0%;"></div>
+                    </div>
+                    <p id="progressText" class="help">הזן חובות כדי להתחיל במעקב.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="box">
+            <h2 class="title is-4">סימולטור פירעון חובות (אפקטיבי)</h2>
+            <div class="field is-horizontal">
+                <div class="field-label is-normal">
+                    <label class="label">תשלום חודשי נוסף</label>
+                </div>
+                <div class="field-body">
+                    <div class="field is-expanded">
+                        <div class="control">
+                            <input id="extraPayment" class="input is-large" type="number" value="100" min="0">
+                        </div>
+                        <p class="help">הקצה סכום זה לפירעון מואץ. דוגמה: 100 ₪</p>
+                    </div>
+                </div>
+            </div>
+
+            <table class="table is-fullwidth is-striped mt-5">
+                <thead>
+                    <tr>
+                        <th>שיטה</th>
+                        <th>סה"כ ריבית שתשולם</th>
+                        <th>סך ריבית שנחסכה</th>
+                        <th>תאריך פירעון צפוי</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsTableBody">
+                    <tr><td>מינימום</td><td id="minInterest">--</td><td class="has-text-grey">--</td><td id="minDate">--</td></tr>
+                    <tr><td><span class="has-text-info">כדור השלג (מומנטום)</span></td><td id="snowballInterest">--</td><td id="snowballSaved" class="has-text-success has-text-weight-bold">--</td><td id="snowballDate">--</td></tr>
+                    <tr><td><span class="has-text-danger">מפולת החובות (חיסכון מקסימלי)</span></td><td id="avalancheInterest">--</td><td id="avalancheSaved" class="has-text-success has-text-weight-bold">--</td><td id="avalancheDate">--</td></tr>
+                </tbody>
+            </table>
+
+            <div class="columns is-centered mt-5">
+                <div class="column is-full">
+                    <canvas id="chartCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="box mt-6">
+            <h2 class="title is-4">ניהול חובות והלוואות (CRUD)</h2>
+            <button id="showAddDebtModal" class="button is-success is-outlined mb-4">הוסף רשומה חדשה</button>
+            
+            <h3 class="title is-5 debt-section-title">הלוואות פעילות (Loans)</h3>
+            <table class="table is-fullwidth is-striped is-hoverable">
+                <thead>
+                    <tr>
+                        <th>שם ההלוואה</th>
+                        <th>יתרה נוכחית</th>
+                        <th>ריבית שנתית (APR)</th>
+                        <th>תשלום מינימלי</th>
+                        <th>פעולות</th>
+                    </tr>
+                </thead>
+                <tbody id="loansTableBody">
+                    <tr><td colspan="5" class="has-text-centered">אין הלוואות פעילות במערכת.</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="title is-5 debt-section-title">חובות קצרי טווח (Debts)</h3>
+            <table class="table is-fullwidth is-striped is-hoverable">
+                <thead>
+                    <tr>
+                        <th>שם החוב</th>
+                        <th>יתרה נוכחית</th>
+                        <th>ריבית שנתית (APR)</th>
+                        <th>תשלום מינימלי</th>
+                        <th>פעולות</th>
+                    </tr>
+                </thead>
+                <tbody id="debtsTableBody">
+                    <tr><td colspan="5" class="has-text-centered">אין חובות קצרי טווח במערכת.</td></tr>
+                </tbody>
+            </table>
+
+            <button id="exportData" class="button is-info is-small is-outlined mt-3">ייצוא נתונים (CSV)</button>
+        </div>
+    </div>
+</section>
+
+<div id="debtModal" class="modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head is-rtl">
+            <p id="modalTitle" class="modal-card-title">הוספת רשומה חדשה</p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body is-rtl">
+            <input type="hidden" id="debtId">
+            
+            <div class="field">
+                <label class="label">סוג הרשומה</label>
+                <div class="control">
+                    <div class="select is-fullwidth">
+                        <select id="debtType" required>
+                            <option value="loan">הלוואה (Loan)</option>
+                            <option value="debt">חוב קצר טווח (Debt)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="field">
+                <label class="label">שם הרשומה / הנושה</label>
+                <div class="control">
+                    <input id="debtName" class="input" type="text" placeholder="הלוואת רכב, כרטיס אשראי X" required>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">יתרה נוכחית (₪)</label>
+                <div class="control">
+                    <input id="debtBalance" class="input" type="number" min="0" required>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">ריבית שנתית (APR %)</label>
+                <div class="control">
+                    <input id="debtRate" class="input" type="number" min="0" step="0.01" required>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">תקופת הלוואה מקורית (חודשים)</label>
+                <div class="control">
+                    <input id="debtTerm" class="input" type="number" min="1" required>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">תשלום חודשי מינימלי (₪)</label>
+                <div class="control">
+                    <input id="debtMinPayment" class="input" type="number" min="0" required>
+                </div>
+            </div>
+        </section>
+        <footer class="modal-card-foot is-rtl">
+            <button id="saveDebtBtn" class="button is-success">שמור</button>
+            <button class="button close-modal">בטל</button>
+        </footer>
+    </div>
+</div>
+
+<script>
+    // ----------------------------------------------------------------------
+    // I. SUPABASE CONFIGURATION (KEYS EMBEDDED)
+    // ----------------------------------------------------------------------
+    const SUPABASE_URL = 'https://fqxptmhkqpzsrqsrcyeq.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxeHB0bWhrcXB6c3Jxc3JjeWVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMzY2MzksImV4cCI6MjA3OTYxMjYzOX0.DI2HKi98JTM-Tz4TKPjfl_yEQKsMGF1tBxQ0TIybFGw';
+
+    const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const finance = new Finance();
+    
+    let currentDebts =;
+    let debtChart;
+    const MAX_MONTHS = 360; // Max months for simulation
+
+    // ----------------------------------------------------------------------
+    // II. CORE FINANCIAL LOGIC (Finance.js + Custom Snowball/Avalanche)
+    // ----------------------------------------------------------------------
+
+    /**
+     * Calculates the amortization schedule for a single loan, month by month.
+     * Handles extra principal payments dynamically.
+     */
+    function calculatePayment(loan, extraPayment) {
+        const monthlyRate = loan.rate / 100 / 12;
+        let interestPaid = loan.balance * monthlyRate;
+        
+        let principalPaid = Math.max(0, loan.min_payment - interestPaid);
+        principalPaid += extraPayment;
+
+        if (principalPaid > loan.balance) {
+            principalPaid = loan.balance;
+        }
+
+        let newBalance = loan.balance - principalPaid;
+        
+        return {
+            interestPaid: interestPaid,
+            principalPaid: principalPaid,
+            newBalance: newBalance,
+            done: newBalance <= 0
+        };
+    }
+
+    /**
+     * Simulates the payoff schedule for a portfolio of debts.
+     */
+    function runSimulation(debts, extraPayment, strategy) {
+        // Only run simulation if there are debts
+        if (debts.length === 0) {
+            return { schedule:, totalInterest: 0, totalMonths: 0 };
+        }
+
+        let simDebts = debts.map(d => ({...d, balance: d.balance }));
+        
+        if (strategy === 'avalanche') {
+            simDebts.sort((a, b) => b.rate - a.rate);
+        } else if (strategy === 'snowball') {
+            simDebts.sort((a, b) => a.balance - b.balance);
+        }
+
+        let totalInterest = 0;
+        let month = 0;
+        let schedule =;
+        let done = false;
+
+        while (!done && month < MAX_MONTHS) {
+            month++;
+            let totalPrincipalPaid = 0;
+            let availableExtra = extraPayment;
+            
+            let targetDebtIndex = -1;
+            if (strategy!== 'min') {
+                targetDebtIndex = simDebts.findIndex(d => d.balance > 0);
+            }
+
+            for (let i = 0; i < simDebts.length; i++) {
+                let debt = simDebts[i];
+
+                if (debt.balance > 0) {
+                    let currentExtra = 0;
+                    
+                    if (strategy!== 'min' && i === targetDebtIndex) {
+                        currentExtra = availableExtra;
+                    }
+                    
+                    let payment = calculatePayment(debt, currentExtra);
+
+                    totalInterest += payment.interestPaid;
+                    totalPrincipalPaid += payment.principalPaid;
+                    debt.balance = payment.newBalance;
+
+                    if (debt.balance <= 0 && targetDebtIndex === i) {
+                        // Roll over minimum payment to the next debt
+                        availableExtra += debt.min_payment;
+                    }
+                }
+            }
+
+            let remainingBalance = simDebts.reduce((sum, d) => sum + Math.max(0, d.balance), 0);
+            schedule.push(remainingBalance);
+
+            done = simDebts.every(d => d.balance <= 0);
+        }
+
+        return {
+            schedule: schedule,
+            totalInterest: totalInterest,
+            totalMonths: month
+        };
+    }
+
+    // ----------------------------------------------------------------------
+    // III. UI / DATA MANAGEMENT (CRUD, Sync, Charting)
+    // ----------------------------------------------------------------------
+
+    // --- A. AUTHENTICATION & SESSION MANAGEMENT ---
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('signInBtn').addEventListener('click', signIn);
+        document.getElementById('signUpBtn').addEventListener('click', signUp);
+        document.getElementById('signOutBtn').addEventListener('click', signOut);
+
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            handleAuth(session? session.user : null);
+        });
+
+        supabase.auth.onAuthStateChange((event, session) => {
+            handleAuth(session? session.user : null);
+        });
+    });
+
+    async function signIn() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+            document.getElementById('authMessage').textContent = 'שגיאת כניסה: ' + error.message;
+        }
+    }
+
+    async function signUp() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) {
+            document.getElementById('authMessage').textContent = 'שגיאת הרשמה: ' + error.message;
+        } else {
+            document.getElementById('authMessage').textContent = 'נשלחה הודעת אימות לדוא"ל שלך. אנא אשר לפני הכניסה.';
+        }
+    }
+
+    async function signOut() {
+        const { error } = await supabase.auth.signOut();
+        if (!error) {
+            document.getElementById('appDashboard').classList.add('is-hidden');
+            document.getElementById('auth').classList.remove('is-hidden');
+            currentDebts =;
+            if (debtChart) debtChart.destroy();
+        }
+    }
+
+    function handleAuth(user) {
+        const authSection = document.getElementById('auth');
+        const appSection = document.getElementById('appDashboard');
+        const userEmailDisplay = document.getElementById('userEmailDisplay');
+
+        if (user) {
+            authSection.classList.add('is-hidden');
+            appSection.classList.remove('is-hidden');
+            userEmailDisplay.textContent = user.email;
+            fetchDebts();
+        } else {
+            authSection.classList.remove('is-hidden');
+            appSection.classList.add('is-hidden');
+        }
+    }
+
+    // --- B. CRUD OPERATIONS (Supabase Database) ---
+
+    // Fetch debts from Supabase
+    async function fetchDebts() {
+        // RLS will ensure only current user's data is fetched
+        const { data, error } = await supabase
+     .from('debts')
+     .select('*');
+
+        if (error) {
+            console.error('Error fetching debts:', error);
+            return;
+        }
+        currentDebts = data;
+        renderDebtsTables(); // Updated function name
+        calculateAndRenderDashboard();
+    }
+
+    // Save or Update a debt
+    document.getElementById('saveDebtBtn').addEventListener('click', async () => {
+        const debtId = document.getElementById('debtId').value;
+        const debt_type = document.getElementById('debtType').value; 
+        const name = document.getElementById('debtName').value;
+        const balance = parseFloat(document.getElementById('debtBalance').value);
+        const rate = parseFloat(document.getElementById('debtRate').value);
+        const term = parseFloat(document.getElementById('debtTerm').value);
+        const min_payment = parseFloat(document.getElementById('debtMinPayment').value);
+
+        const newDebt = { name, debt_type, balance, rate, term, min_payment };
+
+        let result;
+        if (debtId) {
+            result = await supabase
+         .from('debts')
+         .update(newDebt)
+         .eq('id', debtId);
+        } else {
+            result = await supabase
+         .from('debts')
+         .insert();
+        }
+
+        if (result.error) {
+            console.error('Error saving debt:', result.error);
+        } else {
+            closeModal();
+            fetchDebts();
+        }
+    });
+
+    // Delete a debt
+    async function deleteDebt(id) {
+        if (confirm('האם אתה בטוח שברצונך למחוק את הרשומה הזו?')) {
+            const { error } = await supabase
+         .from('debts')
+         .delete()
+         .eq('id', id);
+
+            if (error) {
+                console.error('Error deleting debt:', error);
+            } else {
+                fetchDebts();
+            }
+        }
+    }
+    window.deleteDebt = deleteDebt; // Expose to global scope for HTML onclick
+
+    // --- C. RENDERING AND DASHBOARD (SPLIT TABLES) ---
+
+    function renderDebtsTables() {
+        const loans = currentDebts.filter(d => d.debt_type === 'loan');
+        const debts = currentDebts.filter(d => d.debt_type === 'debt');
+
+        const renderTable = (data, tbodyId) => {
+            const tbody = document.getElementById(tbodyId);
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                const colspan = 5;
+                const message = tbodyId === 'loansTableBody'? 'אין הלוואות פעילות במערכת.' : 'אין חובות קצרי טווח במערכת.';
+                tbody.innerHTML = `<tr><td colspan="${colspan}" class="has-text-centered">${message}</td></tr>`;
+                return;
+            }
+
+            data.forEach(debt => {
+                const row = tbody.insertRow();
+                row.insertCell().textContent = debt.name;
+                row.insertCell().textContent = debt.balance.toFixed(2) + ' ₪';
+                row.insertCell().textContent = debt.rate.toFixed(2) + ' %';
+                row.insertCell().textContent = debt.min_payment.toFixed(2) + ' ₪';
+
+                const actionsCell = row.insertCell();
+                actionsCell.innerHTML = `
+                    <button class="button is-info is-small" onclick="editDebt(${debt.id})">ערוך</button>
+                    <button class="button is-danger is-small" onclick="deleteDebt(${debt.id})">מחק</button>
+                `;
+            });
+        };
+
+        renderTable(loans, 'loansTableBody');
+        renderTable(debts, 'debtsTableBody');
+    }
+
+
+    function calculateAndRenderDashboard() {
+        if (currentDebts.length === 0) {
+            document.getElementById('totalDebt').textContent = '0 ₪';
+            document.getElementById('totalMinPayment').textContent = '0 ₪';
+            document.getElementById('overallProgress').style.width = '0%';
+            document.getElementById('progressText').textContent = '0% מהקרן שולמה. הוסף רשומות כדי להתחיל.';
+            if (debtChart) debtChart.destroy();
+            document.getElementById('resultsTableBody').innerHTML = `<tr><td>מינימום</td><td id="minInterest">--</td><td class="has-text-grey">--</td><td id="minDate">--</td></tr><tr><td><span class="has-text-info">כדור השלג (מומנטום)</span></td><td id="snowballInterest">--</td><td id="snowballSaved" class="has-text-success has-text-weight-bold">--</td><td id="snowballDate">--</td></tr><tr><td><span class="has-text-danger">מפולת החובות (חיסכון מקסימלי)</span></td><td id="avalancheInterest">--</td><td id="avalancheSaved" class="has-text-success has-text-weight-bold">--</td><td id="avalancheDate">--</td></tr>`;
+            return;
+        }
+
+        const totalBalance = currentDebts.reduce((sum, d) => sum + d.balance, 0);
+        const totalMinPayment = currentDebts.reduce((sum, d) => sum + d.min_payment, 0);
+        
+        document.getElementById('totalDebt').textContent = totalBalance.toFixed(2) + ' ₪';
+        document.getElementById('totalMinPayment').textContent = totalMinPayment.toFixed(2) + ' ₪';
+
+        const extraPayment = parseFloat(document.getElementById('extraPayment').value) |
+
+| 0;
+
+        // 1. Run Simulations
+        const minResults = runSimulation(currentDebts, 0, 'min');
+        const snowballResults = runSimulation(currentDebts, extraPayment, 'snowball');
+        const avalancheResults = runSimulation(currentDebts, extraPayment, 'avalanche');
+
+        // 2. Render Results
+        const formatter = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' });
+        const dateFormatter = (months) => {
+            if (months === 0) return 'פרוע!';
+            const date = new Date();
+            date.setMonth(date.getMonth() + months);
+            return date.toLocaleDateString('he-IL', { year: 'numeric', month: 'long' });
+        };
+        
+        // Min Payments
+        document.getElementById('minInterest').textContent = formatter.format(minResults.totalInterest);
+        document.getElementById('minDate').textContent = dateFormatter(minResults.totalMonths);
+        
+        // Snowball
+        document.getElementById('snowballInterest').textContent = formatter.format(snowballResults.totalInterest);
+        document.getElementById('snowballDate').textContent = dateFormatter(snowballResults.totalMonths);
+        const snowballSaved = minResults.totalInterest - snowballResults.totalInterest;
+        document.getElementById('snowballSaved').textContent = formatter.format(snowballSaved) + ` (חיסכון של ${minResults.totalMonths - snowballResults.totalMonths} חודשים)`;
+
+        // Avalanche
+        document.getElementById('avalancheInterest').textContent = formatter.format(avalancheResults.totalInterest);
+        document.getElementById('avalancheDate').textContent = dateFormatter(avalancheResults.totalMonths);
+        const avalancheSaved = minResults.totalInterest - avalancheResults.totalInterest;
+        document.getElementById('avalancheSaved').textContent = formatter.format(avalancheSaved) + ` (חיסכון של ${minResults.totalMonths - avalancheResults.totalMonths} חודשים)`;
+
+        // 3. Render Chart
+        renderChart(minResults, snowballResults, avalancheResults, minResults.totalMonths);
+    }
+    
+    document.getElementById('extraPayment').addEventListener('input', calculateAndRenderDashboard);
+
+    function renderChart(min, snowball, avalanche, maxMonths) {
+        if (debtChart) debtChart.destroy();
+        
+        const ctx = document.getElementById('chartCanvas').getContext('2d');
+        const effectiveMaxMonths = min.totalMonths > 0? min.totalMonths : 1;
+
+        const labels = Array.from({ length: effectiveMaxMonths + 1 }, (_, i) => `חודש ${i}`);
+
+        debtChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets:
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'יתרת החוב הכוללת לאורך זמן (₪)',
+                        position: 'top',
+                        font: { size: 16 }
+                    },
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'יתרה נוכחית (₪)' }
+                    },
+                    x: {
+                        title: { display: true, text: 'חודש' }
+                    }
+                },
+            }
+        });
+    }
+
+    // --- D. MODAL & UTILITY ---
+
+    const modal = document.getElementById('debtModal');
+    const deleteBtn = modal.querySelector('.delete');
+    const closeBtns = modal.querySelectorAll('.close-modal');
+
+    function closeModal() {
+        modal.classList.remove('is-active');
+        document.getElementById('debtId').value = '';
+        document.getElementById('debtType').value = 'loan'; // Reset new field
+        document.getElementById('debtName').value = '';
+        document.getElementById('debtBalance').value = '';
+        document.getElementById('debtRate').value = '';
+        document.getElementById('debtTerm').value = '';
+        document.getElementById('debtMinPayment').value = '';
+    }
+
+    deleteBtn.addEventListener('click', closeModal);
+    closeBtns.forEach(btn => btn.addEventListener('click', closeModal));
+
+    document.getElementById('showAddDebtModal').addEventListener('click', () => {
+        document.getElementById('modalTitle').textContent = 'הוספת רשומה חדשה';
+        modal.classList.add('is-active');
+    });
+
+    // Edit functionality
+    window.editDebt = (id) => {
+        const debt = currentDebts.find(d => d.id === id);
+        if (debt) {
+            document.getElementById('modalTitle').textContent = 'עריכת רשומה: ' + debt.name;
+            document.getElementById('debtId').value = debt.id;
+            document.getElementById('debtType').value = debt.debt_type; // Load new field
+            document.getElementById('debtName').value = debt.name;
+            document.getElementById('debtBalance').value = debt.balance;
+            document.getElementById('debtRate').value = debt.rate;
+            document.getElementById('debtTerm').value = debt.term;
+            document.getElementById('debtMinPayment').value = debt.min_payment;
+            modal.classList.add('is-active');
+        }
+    };
+    
+    // Export functionality
+    document.getElementById('exportData').addEventListener('click', () => {
+        if (currentDebts.length === 0) return;
+
+        const fields = ['id', 'name', 'debt_type', 'balance', 'rate', 'min_payment', 'term'];
+        const replacer = (key, value) => value === null? '' : value;
+        
+        let csv = currentDebts.map(row => 
+            fields.map(fieldName => JSON.stringify(row[fieldName], replacer)).join(',')
+        );
+        csv.unshift(fields.join(','));
+        csv = csv.join('\r\n');
+
+        const filename = 'Debt_Sculptor_Export.csv';
+        var downloadLink = document.createElement("a");
+        var blob = new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' });
+        var url = URL.createObjectURL(blob);
+        
+        downloadLink.href = url;
+        downloadLink.download = filename;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+    });
+
+</script>
+
+</body>
+</html>
+
